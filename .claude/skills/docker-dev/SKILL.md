@@ -19,7 +19,7 @@ ConnectionStrings__Db=Host=db;Database=htn;Username=htn;Password=change-me
 MAILTRAP_API_TOKEN=
 MAILTRAP_MODE=sandbox
 MAILTRAP_INBOX_ID=
-QR_SIGNING_KEY=        # 32+ random bytes, base64
+TICKET_SIGNING_KEY=        # 32+ random bytes, base64
 ```
 
 ## Everyday commands

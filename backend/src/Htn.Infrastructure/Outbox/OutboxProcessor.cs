@@ -25,6 +25,7 @@ public sealed class OutboxProcessor(
     HtnDbContext db,
     IEmailSender sender,
     EmailRenderer renderer,
+    RegistrationEmails registrationEmails,
     TimeProvider clock,
     IOptions<AppLinkOptions> links,
     IOptions<AccountTokenOptions> tokenOptions,
@@ -53,6 +54,13 @@ public sealed class OutboxProcessor(
             try
             {
                 var email = await RenderAsync(message);
+                if (email is null)
+                {
+                    // Obsolete (e.g. paid before the billing went out, or the ticket was re-issued): nothing to deliver.
+                    logger.LogInformation("Outbox message {Id} ({Type}) no longer applies and was skipped", message.Id, message.Type);
+                    message.MarkSent(clock.GetUtcNow(), externalId: null);
+                    continue;
+                }
                 var result = await sender.SendAsync(email, ct);
                 message.MarkSent(clock.GetUtcNow(), result.ExternalId);
             }
@@ -70,7 +78,7 @@ public sealed class OutboxProcessor(
         return batch.Count;
     }
 
-    private async Task<EmailMessage> RenderAsync(OutboxMessage message)
+    private async Task<EmailMessage?> RenderAsync(OutboxMessage message)
     {
         switch (message.Type)
         {
@@ -88,10 +96,34 @@ public sealed class OutboxProcessor(
                 var token = message.Secret ?? throw new InvalidOperationException("Reset token missing.");
                 return await renderer.PasswordResetAsync(p, links.Value.Reset(token), (int)tokenOptions.Value.PasswordResetLifetime.TotalMinutes);
             }
+            case RegistrationEmailTypes.Billing:
+                return await registrationEmails.BillingAsync(Payload<BillingEmailPayload>(message), message.Secret);
+            case RegistrationEmailTypes.Ticket:
+                return await registrationEmails.TicketAsync(Payload<TicketEmailPayload>(message));
+            case RegistrationEmailTypes.Cancelled:
+                return await registrationEmails.CancelledAsync(Payload<RegistrationCancelledEmailPayload>(message));
+            case RegistrationEmailTypes.Test:
+                return await registrationEmails.TestAsync(Payload<EventTestEmailPayload>(message));
             default:
                 throw new NotSupportedException($"Unknown outbox type '{message.Type}'.");
         }
     }
+
+    private static T Payload<T>(OutboxMessage message) =>
+        JsonSerializer.Deserialize<T>(message.PayloadJson, Json) ?? throw new InvalidOperationException($"Empty {message.Type} payload.");
+
+    /// <summary>Billing email; <paramref name="rawProofToken"/> (Upload mode) travels in the secret column, never in the payload.</summary>
+    public static OutboxMessage BillingEmail(Guid registrationId, string? rawProofToken, DateTimeOffset at) =>
+        OutboxMessage.Create(RegistrationEmailTypes.Billing, JsonSerializer.Serialize(new BillingEmailPayload(registrationId), Json), rawProofToken, at);
+
+    public static OutboxMessage TicketEmail(Guid attendeeId, string to, int ticketVersion, DateTimeOffset at) =>
+        OutboxMessage.Create(RegistrationEmailTypes.Ticket, JsonSerializer.Serialize(new TicketEmailPayload(attendeeId, to, ticketVersion), Json), null, at);
+
+    public static OutboxMessage CancelledEmail(Guid registrationId, DateTimeOffset at) =>
+        OutboxMessage.Create(RegistrationEmailTypes.Cancelled, JsonSerializer.Serialize(new RegistrationCancelledEmailPayload(registrationId), Json), null, at);
+
+    public static OutboxMessage EventTestEmail(EventTestEmailPayload payload, DateTimeOffset at) =>
+        OutboxMessage.Create(RegistrationEmailTypes.Test, JsonSerializer.Serialize(payload, Json), null, at);
 
     public static OutboxMessage InviteEmail(InviteEmailPayload payload, string rawToken, DateTimeOffset at) =>
         OutboxMessage.Create(EmailTypes.Invite, JsonSerializer.Serialize(payload, Json), rawToken, at);

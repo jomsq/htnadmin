@@ -57,7 +57,14 @@ public static class StoredFilePurposes
     public const string LogoDark = "logo_dark";
     public const string EventCover = "event_cover";
 
+    /// <summary>Proof of payment from a registrant. Never in a public list: served only to Registrations.Manage.</summary>
+    public const string PaymentProof = "payment_proof";
+
     public const long EventCoverMaxBytes = 2 * 1024 * 1024;
+    public const long PaymentProofMaxBytes = 5 * 1024 * 1024;
+
+    /// <summary>Largest width or height of a proof image (phone screenshots and camera photos).</summary>
+    public const int PaymentProofMaxDimension = 8192;
 
     /// <summary>Purposes that any signed-in user may download through <c>GET /api/files/{id}</c>.</summary>
     public static readonly IReadOnlyList<string> PublicToMembers = [LogoLight, LogoDark];
@@ -68,6 +75,7 @@ public static class StoredFilePurposes
     public static long MaxBytesFor(string purpose) => purpose switch
     {
         EventCover => EventCoverMaxBytes,
+        PaymentProof => PaymentProofMaxBytes,
         _ => StoredFile.MaxBytes,
     };
 }

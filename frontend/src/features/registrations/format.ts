@@ -45,10 +45,18 @@ const historyLabels: Record<string, string> = {
   Reverted: 'Payment reverted',
   Cancelled: 'Cancelled',
   CheckedIn: 'Checked in',
+  create: 'Registered',
+  mark_paid: 'Marked as paid',
+  cancel: 'Cancelled',
+  revert_payment: 'Payment reverted',
+  resend_billing: 'Billing email resent',
+  resend_ticket: 'Ticket email resent',
+  proof_uploaded: 'Proof of payment uploaded',
+  check_in: 'Checked in',
 }
 
 export function historyText(h: RegistrationHistoryEntry): string {
-  return historyLabels[h.kind] ?? h.kind.replace(/([a-z])([A-Z])/g, '$1 $2')
+  return historyLabels[h.kind] ?? h.kind.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2')
 }
 
 /** The current time as a datetime-local value in Manila (default "received at"). */

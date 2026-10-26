@@ -123,6 +123,8 @@ public sealed class Event
     public void UpdateEmailSettings(string? accentColor, IReadOnlyCollection<Guid> paymentAccountIds, int? deadlineHours, DateTimeOffset at, Guid? actorId)
     {
         if (accentColor is not null && !ColorContrast.IsHex(accentColor)) throw new DomainException("Use a hex color like #B71C1C.");
+        if (accentColor is not null && !ColorContrast.HasEnoughContrastWithWhite(accentColor))
+            throw new DomainException("The accent color needs at least 4.5:1 contrast with white text.");
         if (deadlineHours is { } h && (h < OrgSettings.MinPaymentDeadlineHours || h > OrgSettings.MaxPaymentDeadlineHours))
             throw new DomainException($"Use {OrgSettings.MinPaymentDeadlineHours} to {OrgSettings.MaxPaymentDeadlineHours} hours.");
         EmailAccentColor = accentColor?.ToUpperInvariant();

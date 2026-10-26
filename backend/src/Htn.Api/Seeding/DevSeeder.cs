@@ -1,4 +1,6 @@
+using Htn.Domain.Common;
 using Htn.Domain.Events;
+using Htn.Domain.Registrations;
 using Htn.Domain.Organization;
 using Htn.Infrastructure.Data;
 using Htn.Infrastructure.Identity;
@@ -34,6 +36,7 @@ public static class DevSeeder
         await EnsureAsync(db, users, clock, "Leo", "Navarro", "leo@hackthenorth.ph", PersonLevel.Board, "Treasurer", ct);
         await EnsurePositionsAsync(db, clock, ct);
         await EnsureEventsAsync(db, clock, ct);
+        await EnsureRegistrationsAsync(db, sp.GetRequiredService<IPublicIdGenerator>(), clock, ct);
         logger.LogInformation("Development seed data is in place");
     }
 
@@ -117,5 +120,58 @@ public static class DevSeeder
                 "UP Diliman, Quezon City", 200, "A capture-the-flag competition for student teams.", now, null));
             await db.SaveChangesAsync(ct);
         }
+    }
+
+    /// <summary>
+    /// Sample registrations on HTN Con 2026 across statuses (pending, overdue, paid, paid with STUDENT20, a team of 5,
+    /// a sponsor comp, cancelled), from frame 09. Skipped when the event already has registrations. No emails are queued.
+    /// </summary>
+    private static async Task EnsureRegistrationsAsync(HtnDbContext db, IPublicIdGenerator ids, TimeProvider clock, CancellationToken ct)
+    {
+        var con = await db.Events.AsNoTracking().SingleOrDefaultAsync(e => e.Slug == SampleEventSlug, ct);
+        if (con is null || await db.Registrations.AnyAsync(r => r.EventId == con.Id, ct)) return;
+        var tickets = await db.TicketTypes.AsNoTracking().Where(t => t.EventId == con.Id).ToDictionaryAsync(t => t.Name, ct);
+        var student20 = await db.Vouchers.AsNoTracking().SingleOrDefaultAsync(v => v.EventId == con.Id && v.Code == "STUDENT20", ct);
+        if (!tickets.TryGetValue("Regular", out var regular) || !tickets.TryGetValue("Student", out var student)
+            || !tickets.TryGetValue("Team of 5", out var team) || !tickets.TryGetValue("Sponsor comp", out var comp)) return;
+
+        var now = clock.GetUtcNow();
+        static AttendeeDetails P(string first, string last, string email, string? company = null, string? shirt = "M") =>
+            new(first, null, last, "Prefer not to say", email, "+639171234567", null, company, shirt, "Facebook");
+
+        var admin = await db.Users.AsNoTracking().Where(u => u.Email == "alex@hackthenorth.ph").Select(u => (Guid?)u.Id).SingleOrDefaultAsync(ct);
+
+        Registration Add(TicketType t, AttendeeDetails[] people, Voucher? v, DateTimeOffset at, Guid? manualBy = null)
+        {
+            var reg = Registration.Create(con.Id, t, people, people.Select(_ => ids.NewParticipantId()).ToList(), v,
+                manualBy is null ? RegistrationSource.Public : RegistrationSource.Manual, manualBy, RegistrationForm.ConsentVersion,
+                at.AddHours(48), null, at);
+            db.Registrations.Add(reg);
+            return reg;
+        }
+
+        Add(regular, [P("Maria", "Santos", "maria.santos@example.ph", "DICT Region 1")], null, now.AddHours(-2));
+        Add(regular, [P("Jose", "Dela Cruz", "jose.delacruz@example.ph", "Mariano Marcos State University")], null, now.AddDays(-3)); // overdue
+        var paid = Add(regular, [P("Ana", "Reyes", "ana.reyes@example.ph", "Ilocos Norte Provincial Government", "S")], null, now.AddDays(-5));
+        db.Payments.Add(paid.MarkPaid(PaymentMethod.GCash, null, "Ref 7741 0923", now.AddDays(-4), null, now.AddDays(-4)));
+        if (student20 is not null)
+        {
+            var stu = Add(student, [P("Carlo", "Mendoza", "carlo.mendoza@example.ph", "Northwestern University", "L")], student20, now.AddDays(-2));
+            db.Payments.Add(stu.MarkPaid(PaymentMethod.Bank, null, "BPI 0045 1182", now.AddDays(-1), null, now.AddDays(-1)));
+        }
+        Add(team,
+        [
+            P("Bea", "Garcia", "bea.garcia@example.ph", "Team Hack Ilocos"), P("Dan", "Lim", "dan.lim@example.ph", "Team Hack Ilocos"),
+            P("Eli", "Ramos", "eli.ramos@example.ph", "Team Hack Ilocos"), P("Fe", "Torres", "fe.torres@example.ph", "Team Hack Ilocos"),
+            P("Gab", "Navarro", "gab.navarro@example.ph", "Team Hack Ilocos"),
+        ], null, now.AddHours(-20));
+        if (admin is not null)
+        {
+            var sponsor = Add(comp, [P("Hana", "Villanueva", "hana.villanueva@example.ph", "Sample Sponsor Inc.")], null, now.AddDays(-6), admin);
+            db.Payments.Add(sponsor.MarkPaid(PaymentMethod.Comp, null, null, null, admin, now.AddDays(-6)));
+        }
+        var cancelled = Add(regular, [P("Ivan", "Castillo", "ivan.castillo@example.ph")], null, now.AddDays(-7));
+        cancelled.Cancel("Duplicate registration (sample data).", null, now.AddDays(-6));
+        await db.SaveChangesAsync(ct);
     }
 }

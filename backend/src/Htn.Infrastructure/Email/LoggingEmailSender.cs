@@ -13,10 +13,17 @@ public sealed class LoggingEmailSender(ILogger<LoggingEmailSender> logger, IHost
 {
     public Task<EmailSendResult> SendAsync(EmailMessage message, CancellationToken ct)
     {
+        // Names and sizes only: attachment bytes (QR codes, logos) never go to the log.
+        var attachments = message.AllAttachments.Count == 0
+            ? "none"
+            : string.Join(", ", message.AllAttachments.Select(a =>
+                $"{a.FileName} ({a.ContentType}, {a.Content.Length} bytes{(a.IsInline ? $", inline cid:{a.ContentId}" : "")})"));
         if (env.IsDevelopment())
-            logger.LogInformation("Email not sent (no MAILTRAP_API_TOKEN). To {To}, subject {Subject}.\n{Text}", message.To, message.Subject, message.Text);
+            logger.LogInformation("Email not sent (no MAILTRAP_API_TOKEN). To {To}, subject {Subject}, attachments: {Attachments}.\n{Text}",
+                message.To, message.Subject, attachments, message.Text);
         else
-            logger.LogWarning("Email not sent (no MAILTRAP_API_TOKEN). To {To}, subject {Subject}.", EmailMask.Mask(message.To), message.Subject);
+            logger.LogWarning("Email not sent (no MAILTRAP_API_TOKEN). To {To}, subject {Subject}, {Count} attachment(s).",
+                EmailMask.Mask(message.To), message.Subject, message.AllAttachments.Count);
         return Task.FromResult(new EmailSendResult(null));
     }
 }

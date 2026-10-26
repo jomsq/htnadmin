@@ -1,4 +1,4 @@
-<EmailLayout Title="@($"You're invited to {Brand.OrgName} Admin")" Preheader="Set your password to activate your account." BrandColor="@BrandColor">
+<EmailLayout Title="@($"You're invited to {Brand.OrgName} Admin")" Preheader="Set your password to activate your account." BrandColor="@BrandColor" LogoCid="@LogoCid">
   <p style="margin-top:0;">Hi @FirstName,</p>
   <p>
     @(InviterName ?? "An admin") created @(EmailText.WithArticle(Level)[..^Level.Length].Trim()) <strong>@Level</strong> account for you@(Position is null ? "" : $" ({Position})") on the @Brand.OrgName Admin system.
@@ -15,4 +15,5 @@
     [Parameter, EditorRequired] public string Link { get; set; } = "";
     [Parameter] public int ExpiresInHours { get; set; } = 48;
     [Parameter] public string BrandColor { get; set; } = Brand.Color;
+    [Parameter] public string? LogoCid { get; set; }
 }

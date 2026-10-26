@@ -30,12 +30,15 @@ public static class AuthRateLimiting
             o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             o.OnRejected = (ctx, _) => new ValueTask(TooManyAsync(ctx.HttpContext));
             foreach (var policy in Policies)
-                o.AddPolicy(policy, http => PerIp(policy, http));
+                o.AddPolicy(policy, http => PerIp(policy, http, s => s.AuthPermitLimit, s => s.AuthWindowSeconds));
+            foreach (var policy in PublicRateLimiting.Policies)
+                o.AddPolicy(policy, http => PerIp(policy, http, s => PublicRateLimiting.PermitLimit(policy, s), s => s.PublicWindowSeconds));
         });
         return services;
     }
 
-    private static RateLimitPartition<string> PerIp(string policy, HttpContext http)
+    private static RateLimitPartition<string> PerIp(
+        string policy, HttpContext http, Func<RateLimitSettings, int> permits, Func<RateLimitSettings, int> windowSeconds)
     {
         var s = http.RequestServices.GetRequiredService<IOptions<RateLimitSettings>>().Value;
         var ip = http.Connection.RemoteIpAddress;
@@ -43,8 +46,8 @@ public static class AuthRateLimiting
         var key = ip is null ? "unknown" : (ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip).ToString();
         return RateLimitPartition.GetFixedWindowLimiter($"{policy}|{key}", _ => new FixedWindowRateLimiterOptions
         {
-            PermitLimit = s.AuthPermitLimit,
-            Window = TimeSpan.FromSeconds(s.AuthWindowSeconds),
+            PermitLimit = Math.Max(1, permits(s)),
+            Window = TimeSpan.FromSeconds(Math.Max(1, windowSeconds(s))),
             QueueLimit = 0,
         });
     }
@@ -57,7 +60,7 @@ public static class AuthRateLimiting
 }
 
 /// <summary>
-/// Per-email fixed windows for login and forgot-password. Applied before any account lookup, so the limit (and the
+/// Per-email fixed windows for login, forgot-password and public registration (by the buyer's email). Applied before any account lookup, so the limit (and the
 /// 429) is the same for existing and unknown emails. Partition keys are SHA-256 hashes of the normalized email, so
 /// raw addresses aren't kept in memory.
 /// </summary>
@@ -65,17 +68,21 @@ public sealed class EmailRateLimiter : IDisposable
 {
     private readonly PartitionedRateLimiter<string> _login;
     private readonly PartitionedRateLimiter<string> _forgot;
+    private readonly PartitionedRateLimiter<string> _register;
 
     public EmailRateLimiter(IOptions<RateLimitSettings> options)
     {
         var s = options.Value;
         _login = Create(s.LoginPerEmailPermitLimit, s.LoginPerEmailWindowSeconds);
         _forgot = Create(s.ForgotPerEmailPermitLimit, s.ForgotPerEmailWindowSeconds);
+        _register = Create(s.RegisterPerEmailPermitLimit, s.RegisterPerEmailWindowSeconds);
     }
 
     public bool TryLogin(string email) => TryAcquire(_login, email);
 
     public bool TryForgot(string email) => TryAcquire(_forgot, email);
+
+    public bool TryRegister(string email) => TryAcquire(_register, email);
 
     public static string Key(string email) =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(email.Trim().ToUpperInvariant())));
@@ -98,5 +105,28 @@ public sealed class EmailRateLimiter : IDisposable
     {
         _login.Dispose();
         _forgot.Dispose();
+        _register.Dispose();
     }
+}
+
+/// <summary>
+/// Per-IP fixed windows for the anonymous registration endpoints, each with its own bucket and limit. Partitioned by
+/// client IP only, like the auth policies, so slugs or tokens in the path don't open new buckets.
+/// </summary>
+public static class PublicRateLimiting
+{
+    public const string Read = "public-read";
+    public const string Voucher = "public-voucher";
+    public const string Register = "public-register";
+    public const string Proof = "public-proof";
+
+    public static readonly IReadOnlyList<string> Policies = [Read, Voucher, Register, Proof];
+
+    public static int PermitLimit(string policy, RateLimitSettings s) => policy switch
+    {
+        Read => s.PublicReadPermitLimit,
+        Voucher => s.PublicVoucherPermitLimit,
+        Register => s.PublicRegisterPermitLimit,
+        _ => s.PublicProofPermitLimit,
+    };
 }

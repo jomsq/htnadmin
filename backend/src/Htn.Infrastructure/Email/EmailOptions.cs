@@ -14,6 +14,9 @@ public sealed class MailtrapOptions
     public string? InboxId { get; set; }
     public string From { get; set; } = "HackTheNorth.PH <no-reply@hackthenorth.ph>";
 
+    /// <summary>Optional monitored inbox for replies (MAIL_REPLY_TO), e.g. proof of payment in ReplyEmail mode.</summary>
+    public string? ReplyTo { get; set; }
+
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ApiToken);
     public bool IsLive => string.Equals(Mode, "live", StringComparison.OrdinalIgnoreCase);
 
@@ -33,6 +36,7 @@ public sealed class MailtrapOptions
         Mode = config["MAILTRAP_MODE"] is { Length: > 0 } m ? m : "sandbox",
         InboxId = config["MAILTRAP_INBOX_ID"],
         From = config["MAIL_FROM"] is { Length: > 0 } f ? f : "HackTheNorth.PH <no-reply@hackthenorth.ph>",
+        ReplyTo = config["MAIL_REPLY_TO"] is { Length: > 0 } r ? r : null,
     };
 }
 
@@ -43,4 +47,10 @@ public sealed class AppLinkOptions
 
     public string Invite(string token) => $"{PublicBaseUrl.TrimEnd('/')}/invite/{Uri.EscapeDataString(token)}";
     public string Reset(string token) => $"{PublicBaseUrl.TrimEnd('/')}/reset/{Uri.EscapeDataString(token)}";
+
+    /// <summary>Public proof-of-payment upload page (frame 10, Upload mode).</summary>
+    public string Proof(string token) => $"{PublicBaseUrl.TrimEnd('/')}/pay/{Uri.EscapeDataString(token)}";
+
+    /// <summary>Public registration page of an event.</summary>
+    public string Register(string slug) => $"{PublicBaseUrl.TrimEnd('/')}/r/{Uri.EscapeDataString(slug)}";
 }

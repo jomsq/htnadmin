@@ -13,10 +13,15 @@ public sealed class MailtrapEmailSender(HttpClient http, IOptions<MailtrapOption
     {
         var o = options.Value;
         var from = o.FromAddress();
+        var replyTo = string.IsNullOrWhiteSpace(o.ReplyTo) ? null : new System.Net.Mail.MailAddress(o.ReplyTo);
         var body = new MailtrapRequest(
             new MailtrapAddress(from.Address, string.IsNullOrEmpty(from.DisplayName) ? null : from.DisplayName),
             [new MailtrapAddress(message.To, message.ToName)],
-            message.Subject, message.Html, message.Text, message.Category);
+            message.Subject, message.Html, message.Text, message.Category,
+            message.AllAttachments.Count == 0 ? null : message.AllAttachments.Select(a => new MailtrapAttachment(
+                Convert.ToBase64String(a.Content), a.FileName, a.ContentType,
+                a.IsInline ? "inline" : "attachment", a.ContentId)).ToArray(),
+            replyTo is null ? null : new MailtrapAddress(replyTo.Address, string.IsNullOrEmpty(replyTo.DisplayName) ? null : replyTo.DisplayName));
 
         using var request = new HttpRequestMessage(HttpMethod.Post, o.SendUri()) { Content = JsonContent.Create(body) };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", o.ApiToken);
@@ -45,7 +50,17 @@ public sealed class MailtrapEmailSender(HttpClient http, IOptions<MailtrapOption
         [property: JsonPropertyName("subject")] string Subject,
         [property: JsonPropertyName("html")] string Html,
         [property: JsonPropertyName("text")] string Text,
-        [property: JsonPropertyName("category")] string Category);
+        [property: JsonPropertyName("category")] string Category,
+        [property: JsonPropertyName("attachments"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] MailtrapAttachment[]? Attachments,
+        [property: JsonPropertyName("reply_to"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] MailtrapAddress? ReplyTo);
+
+    /// <summary>Mailtrap attachment: base64 content; inline images also carry the content_id used as <c>cid:</c> in the HTML.</summary>
+    private sealed record MailtrapAttachment(
+        [property: JsonPropertyName("content")] string Content,
+        [property: JsonPropertyName("filename")] string FileName,
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("disposition")] string Disposition,
+        [property: JsonPropertyName("content_id"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ContentId);
 
     private sealed record MailtrapResponse(
         [property: JsonPropertyName("success")] bool Success,

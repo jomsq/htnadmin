@@ -809,6 +809,432 @@ namespace Htn.Infrastructure.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Htn.Domain.Registrations.Attendee", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("CheckedInAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("checked_in_at");
+
+                    b.Property<Guid?>("CheckedInById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("checked_in_by_id");
+
+                    b.Property<string>("CheckedInStation")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("checked_in_station");
+
+                    b.Property<string>("Company")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("company");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)")
+                        .HasColumnName("email");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("first_name");
+
+                    b.Property<string>("Gender")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("gender");
+
+                    b.Property<string>("HearAbout")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("hear_about");
+
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("last_name");
+
+                    b.Property<string>("MiddleName")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("middle_name");
+
+                    b.Property<string>("Mobile")
+                        .HasMaxLength(13)
+                        .HasColumnType("character varying(13)")
+                        .HasColumnName("mobile");
+
+                    b.Property<string>("Occupation")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("occupation");
+
+                    b.Property<string>("ParticipantId")
+                        .IsRequired()
+                        .HasMaxLength(13)
+                        .HasColumnType("character(13)")
+                        .HasColumnName("participant_id")
+                        .IsFixedLength();
+
+                    b.Property<Guid>("RegistrationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("registration_id");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<string>("ShirtSize")
+                        .HasMaxLength(4)
+                        .HasColumnType("character varying(4)")
+                        .HasColumnName("shirt_size");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<int>("TicketVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("ticket_version");
+
+                    b.HasKey("Id")
+                        .HasName("pk_attendees");
+
+                    b.HasIndex("ParticipantId")
+                        .HasDatabaseName("ix_attendees_participant_id");
+
+                    b.HasIndex("EventId", "ParticipantId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_attendees_event_participant_id");
+
+                    b.HasIndex("RegistrationId", "SortOrder")
+                        .IsUnique()
+                        .HasDatabaseName("ix_attendees_registration_id_sort_order");
+
+                    b.ToTable("attendees", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_attendees_gender", "gender IS NULL OR gender IN ('Female', 'Male', 'Non-binary', 'Prefer to self-describe', 'Prefer not to say')");
+
+                            t.HasCheckConstraint("ck_attendees_hear_about", "hear_about IS NULL OR hear_about IN ('Facebook', 'LinkedIn', 'Friend or colleague', 'School or organization', 'Sponsor', 'Other')");
+
+                            t.HasCheckConstraint("ck_attendees_mobile", "mobile IS NULL OR mobile ~ '^\\+639[0-9]{9}$'");
+
+                            t.HasCheckConstraint("ck_attendees_participant_id", "participant_id ~ '^HTN-[2-9A-HJKMNP-TV-Z]{4}-[2-9A-HJKMNP-TV-Z]{4}$'");
+
+                            t.HasCheckConstraint("ck_attendees_shirt_size", "shirt_size IS NULL OR shirt_size IN ('XS', 'S', 'M', 'L', 'XL', '2XL')");
+
+                            t.HasCheckConstraint("ck_attendees_sort_order", "sort_order BETWEEN 0 AND 49");
+
+                            t.HasCheckConstraint("ck_attendees_ticket_version", "ticket_version >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("Htn.Domain.Registrations.Payment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTimeOffset>("MarkedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("marked_at");
+
+                    b.Property<Guid?>("MarkedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("marked_by_id");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("method");
+
+                    b.Property<Guid?>("PaymentAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("payment_account_id");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("received_at");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("reference");
+
+                    b.Property<Guid>("RegistrationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("registration_id");
+
+                    b.Property<string>("RevertReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("revert_reason");
+
+                    b.Property<DateTimeOffset?>("RevertedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reverted_at");
+
+                    b.Property<Guid?>("RevertedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reverted_by_id");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_payments");
+
+                    b.HasIndex("MarkedAt")
+                        .HasDatabaseName("ix_payments_marked_at");
+
+                    b.HasIndex("PaymentAccountId")
+                        .HasDatabaseName("ix_payments_payment_account_id");
+
+                    b.HasIndex("RegistrationId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_payments_registration_open")
+                        .HasFilter("reverted_at IS NULL");
+
+                    b.HasIndex("RegistrationId", "MarkedAt")
+                        .HasDatabaseName("ix_payments_registration_id_marked_at");
+
+                    b.ToTable("payments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_payments_amount", "amount >= 0");
+
+                            t.HasCheckConstraint("ck_payments_comp", "method <> 'Comp' OR (amount = 0 AND payment_account_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_payments_method", "method IN ('GCash', 'Bank', 'Cash', 'Comp')");
+
+                            t.HasCheckConstraint("ck_payments_reverted", "(reverted_at IS NULL) = (revert_reason IS NULL) AND (reverted_at IS NULL OR reverted_at >= marked_at)");
+                        });
+                });
+
+            modelBuilder.Entity("Htn.Domain.Registrations.PaymentProof", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("FileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("file_id");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("reference");
+
+                    b.Property<Guid>("RegistrationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("registration_id");
+
+                    b.Property<DateTimeOffset>("UploadedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("uploaded_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_payment_proofs");
+
+                    b.HasIndex("FileId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_payment_proofs_file_id");
+
+                    b.HasIndex("RegistrationId", "UploadedAt")
+                        .HasDatabaseName("ix_payment_proofs_registration_id_uploaded_at");
+
+                    b.ToTable("payment_proofs", (string)null);
+                });
+
+            modelBuilder.Entity("Htn.Domain.Registrations.Registration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("CancelReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("cancel_reason");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<Guid?>("CancelledById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cancelled_by_id");
+
+                    b.Property<DateTimeOffset?>("CheckedInAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("checked_in_at");
+
+                    b.Property<DateTimeOffset>("ConsentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consent_at");
+
+                    b.Property<string>("ConsentVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("consent_version");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_id");
+
+                    b.Property<DateTimeOffset?>("Deadline")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deadline");
+
+                    b.Property<decimal>("Discount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("discount");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<Guid?>("IdempotencyKey")
+                        .HasColumnType("uuid")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<DateTimeOffset?>("PaidAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("paid_at");
+
+                    b.Property<string>("ProofTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .HasColumnName("proof_token_hash")
+                        .IsFixedLength();
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<int>("Seats")
+                        .HasColumnType("integer")
+                        .HasColumnName("seats");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<decimal>("Subtotal")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("subtotal");
+
+                    b.Property<Guid>("TicketTypeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ticket_type_id");
+
+                    b.Property<decimal>("Total")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("total");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("VoucherCode")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("voucher_code");
+
+                    b.Property<Guid?>("VoucherId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("voucher_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_registrations");
+
+                    b.HasIndex("ProofTokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_registrations_proof_token_hash")
+                        .HasFilter("proof_token_hash IS NOT NULL");
+
+                    b.HasIndex("VoucherId")
+                        .HasDatabaseName("ix_registrations_voucher_id")
+                        .HasFilter("voucher_id IS NOT NULL");
+
+                    b.HasIndex("EventId", "CreatedAt")
+                        .HasDatabaseName("ix_registrations_event_id_created_at");
+
+                    b.HasIndex("EventId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_registrations_event_idempotency_key")
+                        .HasFilter("idempotency_key IS NOT NULL");
+
+                    b.HasIndex("TicketTypeId", "Status")
+                        .HasDatabaseName("ix_registrations_ticket_type_id_status");
+
+                    b.HasIndex("EventId", "Status", "Deadline")
+                        .HasDatabaseName("ix_registrations_event_id_status_deadline");
+
+                    b.ToTable("registrations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_registrations_amounts", "subtotal >= 0 AND discount >= 0 AND discount <= subtotal AND total = subtotal - discount");
+
+                            t.HasCheckConstraint("ck_registrations_cancelled", "(status = 'Cancelled') = (cancelled_at IS NOT NULL) AND (cancelled_at IS NULL) = (cancel_reason IS NULL)");
+
+                            t.HasCheckConstraint("ck_registrations_consent", "char_length(consent_version) > 0");
+
+                            t.HasCheckConstraint("ck_registrations_deadline", "total = 0 OR deadline IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_registrations_manual_actor", "source = 'Public' OR created_by_id IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_registrations_paid", "status NOT IN ('Paid', 'CheckedIn') OR paid_at IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_registrations_seats", "seats BETWEEN 1 AND 50");
+
+                            t.HasCheckConstraint("ck_registrations_source", "source IN ('Public', 'Manual')");
+
+                            t.HasCheckConstraint("ck_registrations_status", "status IN ('PendingPayment', 'Paid', 'CheckedIn', 'Cancelled')");
+
+                            t.HasCheckConstraint("ck_registrations_voucher", "(voucher_id IS NULL) = (voucher_code IS NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Htn.Domain.Settings.OrgSettings", b =>
                 {
                     b.Property<int>("Id")
@@ -1479,6 +1905,79 @@ namespace Htn.Infrastructure.Data.Migrations
                         .HasConstraintName("fk_position_assignments_positions_position_id");
                 });
 
+            modelBuilder.Entity("Htn.Domain.Registrations.Attendee", b =>
+                {
+                    b.HasOne("Htn.Domain.Events.Event", null)
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_attendees_events_event_id");
+
+                    b.HasOne("Htn.Domain.Registrations.Registration", null)
+                        .WithMany("Attendees")
+                        .HasForeignKey("RegistrationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_attendees_registrations_registration_id");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Registrations.Payment", b =>
+                {
+                    b.HasOne("Htn.Domain.Settings.PaymentAccount", null)
+                        .WithMany()
+                        .HasForeignKey("PaymentAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_payments_payment_accounts_payment_account_id");
+
+                    b.HasOne("Htn.Domain.Registrations.Registration", null)
+                        .WithMany()
+                        .HasForeignKey("RegistrationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_payments_registrations_registration_id");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Registrations.PaymentProof", b =>
+                {
+                    b.HasOne("Htn.Domain.Files.StoredFile", null)
+                        .WithMany()
+                        .HasForeignKey("FileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_payment_proofs_stored_files_file_id");
+
+                    b.HasOne("Htn.Domain.Registrations.Registration", null)
+                        .WithMany()
+                        .HasForeignKey("RegistrationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_payment_proofs_registrations_registration_id");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Registrations.Registration", b =>
+                {
+                    b.HasOne("Htn.Domain.Events.Event", null)
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_registrations_events_event_id");
+
+                    b.HasOne("Htn.Domain.Events.TicketType", null)
+                        .WithMany()
+                        .HasForeignKey("TicketTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_registrations_ticket_types_ticket_type_id");
+
+                    b.HasOne("Htn.Domain.Events.Voucher", null)
+                        .WithMany()
+                        .HasForeignKey("VoucherId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_registrations_vouchers_voucher_id");
+                });
+
             modelBuilder.Entity("Htn.Domain.Settings.OrgSettings", b =>
                 {
                     b.HasOne("Htn.Domain.Files.StoredFile", null)
@@ -1581,6 +2080,11 @@ namespace Htn.Infrastructure.Data.Migrations
             modelBuilder.Entity("Htn.Domain.Organization.Person", b =>
                 {
                     b.Navigation("History");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Registrations.Registration", b =>
+                {
+                    b.Navigation("Attendees");
                 });
 #pragma warning restore 612, 618
         }

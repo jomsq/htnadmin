@@ -3,6 +3,7 @@ using Htn.Domain.Events;
 using Htn.Domain.Files;
 using Htn.Domain.Organization;
 using Htn.Domain.Outbox;
+using Htn.Domain.Registrations;
 using Htn.Domain.Settings;
 using Htn.Infrastructure.Identity;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
@@ -25,6 +26,10 @@ public sealed class HtnDbContext(DbContextOptions<HtnDbContext> options)
     public DbSet<Event> Events => Set<Event>();
     public DbSet<TicketType> TicketTypes => Set<TicketType>();
     public DbSet<Voucher> Vouchers => Set<Voucher>();
+    public DbSet<Registration> Registrations => Set<Registration>();
+    public DbSet<Attendee> Attendees => Set<Attendee>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<PaymentProof> PaymentProofs => Set<PaymentProof>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<OutboxMessage> Outbox => Set<OutboxMessage>();
     public DbSet<AccountToken> AccountTokens => Set<AccountToken>();
@@ -60,12 +65,12 @@ public sealed class HtnDbContext(DbContextOptions<HtnDbContext> options)
         foreach (var entry in ChangeTracker.Entries())
         {
             if (entry.State is not (EntityState.Modified or EntityState.Deleted)) continue;
-            if (entry.Entity is AuditEntry or Domain.Organization.PersonHistory)
+            if (entry.Entity is AuditEntry or Domain.Organization.PersonHistory or PaymentProof)
                 throw new InvalidOperationException($"{entry.Entity.GetType().Name} is append-only.");
             if (entry.State == EntityState.Deleted && entry.Entity is Person)
                 throw new InvalidOperationException("People are deactivated, never deleted.");
             if (entry.State == EntityState.Deleted && entry.Entity is Position or PositionAssignment or PaymentAccount or StoredFile or Domain.Settings.OrgSettings
-                    or Event or TicketType or Voucher)
+                    or Event or TicketType or Voucher or Registration or Attendee or Payment or PaymentProof)
                 throw new InvalidOperationException($"{entry.Entity.GetType().Name} rows are never deleted.");
         }
     }

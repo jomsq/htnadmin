@@ -4,12 +4,14 @@ using Htn.Api.Common;
 using Htn.Api.Features.Auth;
 using Htn.Api.Features.Events;
 using Htn.Api.Features.Organization;
+using Htn.Api.Features.Registrations;
 using Htn.Api.Features.Settings;
 using Htn.Api.Hosting;
 using Htn.Api.Seeding;
 using Htn.Infrastructure;
 using Htn.Infrastructure.Data;
 using Htn.Infrastructure.Identity;
+using Htn.Infrastructure.Tickets;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -27,6 +29,8 @@ builder.Services.AddOptions<RateLimitSettings>().BindConfiguration(RateLimitSett
 
 // ---- Fail fast on unsafe deployment configuration ----
 HostingSetup.EnsureEmailConfigured(builder.Configuration, builder.Environment);
+// Ticket QR codes are HMAC-signed with TICKET_SIGNING_KEY; outside Development a missing or short key stops startup.
+TicketSigning.EnsureConfigured(builder.Configuration, builder.Environment);
 
 // ---- Reverse proxy (nginx / TLS terminator) ----
 // Trust X-Forwarded-For/Proto so Secure cookies work behind TLS termination and rate limits see the real client IP.
@@ -111,6 +115,7 @@ builder.Services.AddValidatorsFromAssemblyContaining<Program>(includeInternalTyp
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<MeService>();
 builder.Services.AddScoped<AccountProvisioning>();
+builder.Services.AddScoped<Checkout>();
 builder.Services.AddHealthChecks().AddDbContextCheck<HtnDbContext>("db");
 
 var app = builder.Build();
@@ -138,6 +143,9 @@ app.MapPublicFiles();
 app.MapEvents();
 app.MapTicketTypes();
 app.MapVouchers();
+app.MapEventEmailSettings();
+app.MapRegistrations();
+app.MapPublicRegistration();
 
 var migrate = app.Configuration.GetValue("Database:MigrateOnStartup", app.Environment.IsDevelopment());
 if (migrate)

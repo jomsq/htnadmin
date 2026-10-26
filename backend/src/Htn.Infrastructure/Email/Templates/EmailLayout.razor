@@ -11,9 +11,25 @@
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
     <tr>
       <td align="center">
-        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden;">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden;border-top:4px solid @BrandColor;">
           <tr>
-            <td style="background:@BrandColor;padding:20px 32px;color:#ffffff;font-size:18px;font-weight:700;">@Brand.OrgName</td>
+            <td style="padding:20px 32px;border-bottom:1px solid #e5e7eb;">
+              <table role="presentation" cellpadding="0" cellspacing="0">
+                <tr>
+                  @if (LogoCid is not null)
+                  {
+                    <td style="padding-right:12px;vertical-align:middle;"><img src="cid:@LogoCid" alt="@Brand.OrgName" height="36" style="display:block;height:36px;width:auto;border:0;" /></td>
+                  }
+                  <td style="vertical-align:middle;">
+                    <div style="font-size:@(LogoCid is null ? "18px" : "13px");font-weight:700;color:@(LogoCid is null ? BrandColor : "#4b5563");">@Brand.OrgName</div>
+                    @if (Heading is not null)
+                    {
+                      <div style="font-size:16px;font-weight:700;color:#111827;">@Heading</div>
+                    }
+                  </td>
+                </tr>
+              </table>
+            </td>
           </tr>
           <tr>
             <td style="padding:32px;font-size:16px;line-height:1.6;">
@@ -21,8 +37,8 @@
             </td>
           </tr>
           <tr>
-            <td style="padding:16px 32px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;">
-              @Brand.OrgName &middot; This is an automated message from the HTN Admin system. If you did not expect it, you can ignore it.
+            <td style="padding:16px 32px;border-top:1px solid #e5e7eb;font-size:12px;color:#4b5563;">
+              @Brand.OrgName Inc. &middot; a non-stock, non-profit corporation. This is an automated message from the HTN Admin system. If you did not expect it, you can ignore it.
             </td>
           </tr>
         </table>
@@ -36,5 +52,12 @@
     [Parameter, EditorRequired] public string Title { get; set; } = "";
     [Parameter] public string? Preheader { get; set; }
     [Parameter] public string BrandColor { get; set; } = Brand.Color;
+
+    /// <summary>Content ID of the inline logo attachment; null shows the organization name only.</summary>
+    [Parameter] public string? LogoCid { get; set; }
+
+    /// <summary>Second header line (the event name on registration emails).</summary>
+    [Parameter] public string? Heading { get; set; }
+
     [Parameter] public RenderFragment? ChildContent { get; set; }
 }

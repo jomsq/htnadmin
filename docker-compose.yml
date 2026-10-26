@@ -39,7 +39,10 @@ services:
       MAILTRAP_MODE: ${MAILTRAP_MODE:-sandbox}
       MAILTRAP_INBOX_ID: ${MAILTRAP_INBOX_ID:-}
       MAIL_FROM: ${MAIL_FROM:-HackTheNorth.PH <no-reply@hackthenorth.ph>}
-      QR_SIGNING_KEY: ${QR_SIGNING_KEY:-}
+      MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}   # optional inbox for replies (proof of payment in reply-by-email mode)
+      # Signs ticket QR codes (HMAC-SHA256). DEV-ONLY default: anyone who knows it can forge tickets. Production must
+      # set its own (docker-compose.prod.yml refuses to start without one).
+      TICKET_SIGNING_KEY: ${TICKET_SIGNING_KEY:-htn-dev-only-ticket-signing-key-not-for-production}
       App__PublicBaseUrl: ${App__PublicBaseUrl:-http://localhost:5173}
       Storage__Path: /app/uploads   # uploaded logos (PNG); the `uploads` volume below
       # Sample accounts (incl. a Board login with a published password) are seeded only when BOTH this is true

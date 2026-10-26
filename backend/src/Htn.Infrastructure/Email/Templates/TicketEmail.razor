@@ -1,0 +1,42 @@
+<EmailLayout Title="@($"Your {EventName} ticket")" Preheader="Payment received. Show this QR code at the entrance." BrandColor="@BrandColor" LogoCid="@LogoCid" Heading="@EventName">
+  <h1 style="margin:0 0 12px;font-size:22px;line-height:1.3;color:#111827;">You're in, @FirstName</h1>
+  @if (ForSomeoneElse)
+  {
+    <p style="margin-top:0;">Payment received. This is the ticket for <strong>@AttendeeName</strong> in your group. They get their own copy too.</p>
+  }
+  else
+  {
+    <p style="margin-top:0;">Payment received. Show this QR code at the entrance.</p>
+  }
+
+  <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px auto;">
+    <tr>
+      <td align="center" style="padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#ffffff;">
+        <img src="cid:@QrCid" alt="@($"Ticket QR code for {AttendeeName}, participant ID {ParticipantId}")" width="220" height="220" style="display:block;width:220px;height:220px;border:0;" />
+      </td>
+    </tr>
+  </table>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;border-top:1px solid #e5e7eb;">
+    <tr><td style="padding:8px 0;color:#4b5563;width:30%;">Attendee</td><td style="padding:8px 0;font-weight:600;">@AttendeeName</td></tr>
+    <tr><td style="padding:8px 0;color:#4b5563;">Ticket</td><td style="padding:8px 0;font-weight:600;">@TicketName &middot; <span style="font-family:Menlo,Consolas,monospace;">@ParticipantId</span></td></tr>
+    <tr><td style="padding:8px 0;color:#4b5563;">When</td><td style="padding:8px 0;font-weight:600;">@When</td></tr>
+    <tr><td style="padding:8px 0;color:#4b5563;">Where</td><td style="padding:8px 0;font-weight:600;">@Where</td></tr>
+  </table>
+  <p style="font-size:14px;color:#4b5563;">Add to calendar: open the attached <strong>@CalendarFileName</strong>. If the QR code doesn't show, give your participant ID at the help desk.</p>
+</EmailLayout>
+
+@code {
+    [Parameter, EditorRequired] public string FirstName { get; set; } = "";
+    [Parameter, EditorRequired] public string AttendeeName { get; set; } = "";
+    [Parameter] public bool ForSomeoneElse { get; set; }
+    [Parameter, EditorRequired] public string EventName { get; set; } = "";
+    [Parameter, EditorRequired] public string TicketName { get; set; } = "";
+    [Parameter, EditorRequired] public string ParticipantId { get; set; } = "";
+    [Parameter, EditorRequired] public string When { get; set; } = "";
+    [Parameter, EditorRequired] public string Where { get; set; } = "";
+    [Parameter, EditorRequired] public string QrCid { get; set; } = "";
+    [Parameter] public string CalendarFileName { get; set; } = "event.ics";
+    [Parameter] public string BrandColor { get; set; } = Brand.Color;
+    [Parameter] public string? LogoCid { get; set; }
+}

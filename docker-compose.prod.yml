@@ -21,6 +21,9 @@ services:
       # Production refuses to start without MAILTRAP_API_TOKEN (set in .env) unless this is true (emails are then
       # only logged, with masked recipients).
       Email__AllowLoggingSender: ${EMAIL_ALLOW_LOGGING_SENDER:-false}
+      # Ticket QR signing key: at least 32 random bytes, e.g. `openssl rand -base64 48`. Required; rotating it
+      # invalidates every QR code already emailed (resend tickets afterwards).
+      TICKET_SIGNING_KEY: ${TICKET_SIGNING_KEY:?Set TICKET_SIGNING_KEY in .env (openssl rand -base64 48)}
       # Who may set X-Forwarded-For/Proto: the nginx container's network (CIDR) or IPs, comma-separated.
       # Leave blank only if the api is reachable solely through nginx (as in this file: no published api port).
       ForwardedHeaders__KnownNetworks: ${FORWARDED_KNOWN_NETWORKS:-}

@@ -17,6 +17,7 @@ namespace Htn.Api.Tests.Infrastructure;
 public class HtnApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     public const string Password = "Correct-Horse-Battery-1";
+    public const string TicketSigningKey = "test-only-ticket-signing-key-0123456789abcdef";
 
     private TestDatabase? _database;
 
@@ -55,6 +56,12 @@ public class HtnApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("RateLimiting:AuthPermitLimit", "100000");
         builder.UseSetting("RateLimiting:LoginPerEmailPermitLimit", "100000");
         builder.UseSetting("RateLimiting:ForgotPerEmailPermitLimit", "100000");
+        builder.UseSetting("RateLimiting:PublicReadPermitLimit", "100000");
+        builder.UseSetting("RateLimiting:PublicVoucherPermitLimit", "100000");
+        builder.UseSetting("RateLimiting:PublicRegisterPermitLimit", "100000");
+        builder.UseSetting("RateLimiting:PublicProofPermitLimit", "100000");
+        builder.UseSetting("RateLimiting:RegisterPerEmailPermitLimit", "100000");
+        builder.UseSetting("Tickets:SigningKey", TicketSigningKey);
         builder.UseSetting("Email:AllowLoggingSender", "true"); // the fake sender replaces it below
         builder.UseSetting("Auth:RequireBoard2fa", RequireBoard2fa ? "true" : "false");
         builder.UseSetting("Auth:SecurityStampValidationInterval", "00:00:00");

@@ -28,4 +28,15 @@ public sealed class RateLimitSettings
     /// <summary>Password-reset requests per normalized email, whether or not an account exists.</summary>
     public int ForgotPerEmailPermitLimit { get; set; } = 5;
     public int ForgotPerEmailWindowSeconds { get; set; } = 10 * 60;
+
+    /// <summary>Per client IP, per window of <see cref="PublicWindowSeconds"/>, for the public registration endpoints.</summary>
+    public int PublicReadPermitLimit { get; set; } = 120;
+    public int PublicVoucherPermitLimit { get; set; } = 10;
+    public int PublicRegisterPermitLimit { get; set; } = 10;
+    public int PublicProofPermitLimit { get; set; } = 20;
+    public int PublicWindowSeconds { get; set; } = 60;
+
+    /// <summary>Public registrations per normalized buyer email.</summary>
+    public int RegisterPerEmailPermitLimit { get; set; } = 5;
+    public int RegisterPerEmailWindowSeconds { get; set; } = 60 * 60;
 }
