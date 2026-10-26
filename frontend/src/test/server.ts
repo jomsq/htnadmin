@@ -15,7 +15,7 @@ export const boardMe: Me = {
   twoFactorEnabled: true,
   // The server sends true only while the board 2FA gate applies.
   twoFactorRequired: false,
-  policies: ['People.View', 'People.Manage', 'Settings.Personal', 'Settings.Manage', 'Finance.View', 'Events.View', 'Events.Manage'],
+  policies: ['People.View', 'People.Manage', 'Settings.Personal', 'Settings.Manage', 'Finance.View', 'Events.View', 'Events.Manage', 'Registrations.Manage'],
   preferences: { mode: 'system', textSize: 'default', density: 'comfortable' },
 }
 

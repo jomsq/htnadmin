@@ -28,3 +28,14 @@ export const buttonSizes: Record<ButtonSize, string> = {
 export function buttonClass(variant: ButtonVariant = 'primary', size: ButtonSize = 'md', className?: string) {
   return cn(base, buttonSizes[size], buttonVariants[variant], variant === 'link' && 'h-auto', className)
 }
+
+/** Button styles for use on the dark SelectionBar. */
+export function selectionBarButtonClass(primary = false, className?: string) {
+  return cn(
+    buttonClass('ghost', 'md', 'h-9 px-3 text-[0.8125rem]'),
+    primary
+      ? 'bg-white text-gray-900 hover:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200'
+      : 'text-white ring-1 ring-gray-600 ring-inset hover:bg-white/10 dark:text-white dark:hover:bg-white/10',
+    className,
+  )
+}

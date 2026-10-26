@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
-import { Skeleton } from '@/components/ui/Spinner'
+import { Skeleton } from './Spinner'
 
 /** Renders a QR code for `value` as an image (generated locally, never sent to a third party). */
 export function QrCode({ value, label, size = 192 }: { value: string; label: string; size?: number }) {

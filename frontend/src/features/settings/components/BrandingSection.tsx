@@ -7,27 +7,17 @@ import { contrastWithWhite, DEFAULT_BRAND, isHexColor, MIN_CONTRAST } from '@/ap
 import { Alert } from '@/components/ui/Alert'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { ColorSwatches } from '@/components/ui/ColorSwatches'
 import { Field } from '@/components/ui/Field'
 import { FileButton } from '@/components/ui/FileButton'
 import { Input } from '@/components/ui/Input'
 import { Skeleton } from '@/components/ui/Spinner'
-import { CheckIcon, UploadIcon } from '@/components/ui/icons'
+import { UploadIcon } from '@/components/ui/icons'
 import { useToast } from '@/components/ui/toast-context'
 import { cn } from '@/lib/cn'
 import { useOrgSettingsQuery, useSaveBrandingMutation, useUploadLogoMutation, type LogoVariant } from '../api'
 import { brandingFormSchema, type Branding } from '../schemas'
 import { SettingsCard } from './SettingsCard'
-
-/** Preset colors; every one has at least 4.5:1 contrast with white text. */
-const swatches = [
-  { hex: '#B71C1C', name: 'HTN red' },
-  { hex: '#BE185D', name: 'Pink' },
-  { hex: '#B45309', name: 'Amber' },
-  { hex: '#047857', name: 'Green' },
-  { hex: '#0F766E', name: 'Teal' },
-  { hex: '#1D4ED8', name: 'Blue' },
-  { hex: '#374151', name: 'Gray' },
-] as const
 
 const LOGO_MAX_BYTES = 1024 * 1024
 
@@ -123,29 +113,11 @@ function ThemeForm({ branding }: { branding: Branding }) {
       <form noValidate onSubmit={onSubmit} className="flex flex-col gap-4">
         <fieldset className="flex flex-col gap-3">
           <legend className="mb-2.5 text-sm font-medium text-gray-900 dark:text-gray-50">Brand color</legend>
-          <div role="radiogroup" aria-label="Brand color presets" className="flex flex-wrap gap-2">
-            {swatches.map((s) => {
-              const selected = color.toUpperCase() === s.hex
-              return (
-                <button
-                  key={s.hex}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  aria-label={`${s.name} ${s.hex}`}
-                  title={`${s.name} ${s.hex}`}
-                  onClick={() => setValue('brandColor', s.hex, { shouldDirty: true, shouldValidate: true })}
-                  className={cn(
-                    'inline-flex size-11 items-center justify-center rounded-full text-white ring-offset-2 dark:ring-offset-gray-900',
-                    selected ? 'ring-2 ring-gray-900 dark:ring-gray-50' : 'ring-1 ring-gray-900/10 dark:ring-white/15',
-                  )}
-                  style={{ backgroundColor: s.hex }}
-                >
-                  {selected ? <CheckIcon size={18} /> : null}
-                </button>
-              )
-            })}
-          </div>
+          <ColorSwatches
+            aria-label="Brand color presets"
+            value={color}
+            onChange={(hex) => setValue('brandColor', hex, { shouldDirty: true, shouldValidate: true })}
+          />
           <div className="flex flex-wrap items-start gap-4">
             <Field label="Hex" error={errors.brandColor?.message} className="w-40">
               {(p) => <Input {...p} {...register('brandColor')} maxLength={7} spellCheck={false} autoComplete="off" className="font-mono uppercase" />}

@@ -34,6 +34,8 @@ function BackLink() {
 export function EventLayout() {
   const { eventId = '' } = useParams()
   const query = useEventQuery(eventId)
+  const canManage = useCan(Policies.EventsManage)
+  const canRegistrations = useCan(Policies.RegistrationsManage)
 
   if (query.isPending) {
     return (
@@ -85,10 +87,11 @@ export function EventLayout() {
 
   const event = query.data
   const base = `/events/${encodeURIComponent(event.id)}`
+  // Tabs the user can't open are hidden (the routes and the API check the same policies).
   const tabs = [
     { to: `${base}/details`, label: 'Details' },
-    { to: `${base}/registrations`, label: 'Registrations' },
-    { to: `${base}/emails`, label: 'Emails' },
+    ...(canRegistrations ? [{ to: `${base}/registrations`, label: 'Registrations' }] : []),
+    ...(canManage ? [{ to: `${base}/emails`, label: 'Emails' }] : []),
     { to: `${base}/check-in`, label: 'Check-in' },
   ]
 

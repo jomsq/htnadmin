@@ -24,6 +24,15 @@ export const routes: RouteObject[] = [
   {
     errorElement: <RouteErrorPage />,
     children: [
+      // Public pages: no app shell and no sign-in (the API is anonymous and rate limited).
+      {
+        path: '/r/:slug',
+        lazy: async () => ({ Component: (await import('@/features/registrations/public/PublicRegistrationPage')).PublicRegistrationPage }),
+      },
+      {
+        path: '/pay/:token',
+        lazy: async () => ({ Component: (await import('@/features/registrations/public/ProofUploadPage')).ProofUploadPage }),
+      },
       {
         element: <RedirectIfSignedIn />,
         children: [
@@ -81,8 +90,20 @@ export const routes: RouteObject[] = [
                     children: [
                       { index: true, element: <Navigate to="details" replace /> },
                       { path: 'details', lazy: async () => ({ Component: (await import('@/features/events/EventDetailsPage')).EventDetailsPage }) },
-                      eventPlaceholder('registrations', 'Registrations', 'Registrations, payments and participant IDs will show here.'),
-                      eventPlaceholder('emails', 'Emails', 'Billing and ticket email settings for this event will show here.'),
+                      {
+                        path: 'registrations',
+                        element: <RequirePolicy policy={Policies.RegistrationsManage} />,
+                        children: [
+                          { index: true, lazy: async () => ({ Component: (await import('@/features/registrations/RegistrationsPage')).RegistrationsPage }) },
+                        ],
+                      },
+                      {
+                        path: 'emails',
+                        element: <RequirePolicy policy={Policies.EventsManage} />,
+                        children: [
+                          { index: true, lazy: async () => ({ Component: (await import('@/features/registrations/EmailSettingsPage')).EmailSettingsPage }) },
+                        ],
+                      },
                       eventPlaceholder('check-in', 'Check-in', 'The phone scanner and the check-in desk will open from here.'),
                       { path: '*', element: <NotFoundPage /> },
                     ],

@@ -17,6 +17,10 @@ type Props<T extends string> = {
   'aria-describedby'?: string
   /** segmented = gray track with white selected pill; chips = separate ring buttons (level picker). */
   variant?: 'segmented' | 'chips'
+  /** lg = 44px targets (public and kiosk screens). */
+  size?: 'md' | 'lg'
+  /** Stretch options into equal grid columns. */
+  fill?: boolean
   className?: string
 }
 
@@ -26,9 +30,13 @@ export function SegmentedControl<T extends string>({
   value,
   onChange,
   variant = 'segmented',
+  size = 'md',
+  fill = false,
   className,
   ...aria
 }: Props<T>) {
+  // Keep one option reachable with Tab even when nothing is selected yet.
+  const focusIndex = Math.max(0, options.findIndex((o) => o.value === value))
   const refs = useRef<Array<HTMLButtonElement | null>>([])
 
   function onKeyDown(e: KeyboardEvent<HTMLButtonElement>, index: number) {
@@ -44,8 +52,9 @@ export function SegmentedControl<T extends string>({
     <div
       role="radiogroup"
       {...aria}
+      style={fill ? { gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` } : undefined}
       className={cn(
-        'inline-flex flex-wrap',
+        fill ? 'grid' : 'inline-flex flex-wrap',
         variant === 'segmented' ? 'gap-0.5 rounded-lg bg-gray-100 p-1 dark:bg-white/5' : 'gap-1.5',
         className,
       )}
@@ -63,11 +72,12 @@ export function SegmentedControl<T extends string>({
             aria-checked={checked}
             aria-label={opt.icon ? opt.label : undefined}
             title={opt.icon ? opt.label : undefined}
-            tabIndex={checked ? 0 : -1}
+            tabIndex={i === focusIndex ? 0 : -1}
             onClick={() => onChange(opt.value)}
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(
-              'inline-flex h-9 items-center justify-center rounded-md text-[0.8125rem] font-medium transition-colors',
+              'inline-flex items-center justify-center rounded-md font-medium transition-colors',
+              size === 'lg' ? 'h-11 text-sm font-semibold' : 'h-9 text-[0.8125rem]',
               opt.icon ? 'w-11' : 'px-3',
               variant === 'segmented'
                 ? checked

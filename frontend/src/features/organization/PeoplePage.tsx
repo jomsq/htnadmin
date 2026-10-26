@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { FilterChip } from '@/components/ui/FilterChip'
 import { PageHeader } from '@/components/ui/PageHeader'
+import { Pagination } from '@/components/ui/Pagination'
 import { Skeleton } from '@/components/ui/Spinner'
 import { Table, TBody, Td, Th, THead, Tr } from '@/components/ui/Table'
 import { PeopleIcon, SearchIcon } from '@/components/ui/icons'
@@ -208,30 +209,5 @@ function LoadingRows() {
         </div>
       ))}
     </div>
-  )
-}
-
-function Pagination({ page, pageSize, total, onPage }: { page: number; pageSize: number; total: number; onPage: (p: number) => void }) {
-  const from = total === 0 ? 0 : (page - 1) * pageSize + 1
-  const to = Math.min(page * pageSize, total)
-  const last = Math.max(1, Math.ceil(total / pageSize))
-  return (
-    <nav aria-label="Pagination" className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-5 py-3 text-[0.8125rem] text-gray-600 dark:border-white/10 dark:text-gray-400">
-      <p>
-        Showing <span className="font-medium text-gray-900 tabular-nums dark:text-gray-50">{from}</span>–
-        <span className="font-medium text-gray-900 tabular-nums dark:text-gray-50">{to}</span> of{' '}
-        <span className="font-medium text-gray-900 tabular-nums dark:text-gray-50">{total}</span>
-      </p>
-      {last > 1 ? (
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>
-            Previous
-          </Button>
-          <Button variant="secondary" size="sm" disabled={page >= last} onClick={() => onPage(page + 1)}>
-            Next
-          </Button>
-        </div>
-      ) : null}
-    </nav>
   )
 }

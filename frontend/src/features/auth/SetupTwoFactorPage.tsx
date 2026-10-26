@@ -13,7 +13,7 @@ import { Skeleton } from '@/components/ui/Spinner'
 import { safeNext } from '@/lib/format'
 import { useEnableTwoFactorMutation, useTwoFactorSetupQuery } from './api'
 import { formatSharedKey } from './format'
-import { QrCode } from './QrCode'
+import { QrCode } from '@/components/ui/QrCode'
 import { codeSchema, type CodeValues } from './schemas'
 
 

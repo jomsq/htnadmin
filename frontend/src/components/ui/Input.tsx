@@ -7,8 +7,9 @@ export const controlClass =
   'read-only:bg-gray-50 read-only:text-gray-600 aria-[invalid=true]:ring-red-600 ' +
   'dark:bg-gray-900 dark:text-gray-50 dark:ring-white/15 dark:placeholder:text-gray-500 dark:read-only:bg-gray-800 dark:read-only:text-gray-400 dark:aria-[invalid=true]:ring-red-400 dark:focus:outline-brand-300'
 
-export type ControlSize = 'md' | 'lg'
-const heights: Record<ControlSize, string> = { md: 'h-10', lg: 'h-11 text-[0.9375rem]' }
+/** xl = 48px with 16px text, for the mobile public forms (no zoom on focus in iOS). */
+export type ControlSize = 'md' | 'lg' | 'xl'
+const heights: Record<ControlSize, string> = { md: 'h-10', lg: 'h-11 text-[0.9375rem]', xl: 'h-12 text-base' }
 
 export type InputProps = ComponentProps<'input'> & { controlSize?: ControlSize }
 

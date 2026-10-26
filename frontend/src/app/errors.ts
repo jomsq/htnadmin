@@ -29,6 +29,12 @@ const codeMessages: Record<string, string> = {
   price_locked: "The price can't change after tickets have been sold.",
   duplicate_code: 'This voucher code is already used for this event.',
   duplicate_main_event: 'Another event is already the main event for that membership year.',
+  sold_out: 'This ticket just sold out. Pick another ticket.',
+  ticket_unavailable: "This ticket isn't available anymore. Pick another ticket.",
+  invalid_voucher: "This voucher code can't be used.",
+  invalid_status: 'This registration changed in the meantime. Refresh and try again.',
+  already_checked_in: "This attendee has already checked in, so the payment can't be reverted.",
+  proof_invalid: 'This upload link is invalid or has expired.',
 }
 
 /** Message for a known API error code, if any. */

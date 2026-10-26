@@ -8,6 +8,8 @@ export const Policies = {
   /** Any signed-in user: published events. Drafts stay manager-only on the server. */
   EventsView: 'Events.View',
   EventsManage: 'Events.Manage',
+  /** Board only: manual registration, mark paid, cancel, revert, resend, export. */
+  RegistrationsManage: 'Registrations.Manage',
 } as const
 
 export type Policy = (typeof Policies)[keyof typeof Policies] | (string & {})
