@@ -57,3 +57,14 @@ export const MinusIcon = createIcon('M5 12h14')
 export const UploadIcon = createIcon('M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12')
 export const ChevronRightIcon = createIcon('M9 18l6-6-6-6')
 export const ChevronLeftIcon = createIcon('M15 18l-6-6 6-6')
+export const CircleIcon = createIcon('M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z')
+
+/** Circle with the left half filled ("own / scoped" access). */
+export function HalfCircleIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" />
+    </Icon>
+  )
+}

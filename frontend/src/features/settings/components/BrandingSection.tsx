@@ -3,7 +3,7 @@ import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { isApiError } from '@/app/api'
 import { errorMessage } from '@/app/errors'
-import { contrastWithWhite, isHexColor, MIN_CONTRAST } from '@/app/theme/brand'
+import { contrastWithWhite, DEFAULT_BRAND, isHexColor, MIN_CONTRAST } from '@/app/theme/brand'
 import { Alert } from '@/components/ui/Alert'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -15,7 +15,7 @@ import { CheckIcon, UploadIcon } from '@/components/ui/icons'
 import { useToast } from '@/components/ui/toast-context'
 import { cn } from '@/lib/cn'
 import { useOrgSettingsQuery, useSaveBrandingMutation, useUploadLogoMutation, type LogoVariant } from '../api'
-import { brandingFormSchema, type Branding, type BrandingFormValues } from '../schemas'
+import { brandingFormSchema, type Branding } from '../schemas'
 import { SettingsCard } from './SettingsCard'
 
 /** Preset colors; every one has at least 4.5:1 contrast with white text. */
@@ -31,45 +31,55 @@ const swatches = [
 
 const LOGO_MAX_BYTES = 1024 * 1024
 
+const themeFormSchema = brandingFormSchema.pick({ brandColor: true })
+type ThemeFormValues = { brandColor: string }
+const deadlineFormSchema = brandingFormSchema.pick({ paymentDeadlineHours: true })
+type DeadlineFormValues = { paymentDeadlineHours: number }
+
 function checkLogo(file: File): string | null {
   if (file.type !== 'image/png' && !/\.png$/i.test(file.name)) return 'Upload a PNG file.'
   if (file.size > LOGO_MAX_BYTES) return 'The logo is larger than 1 MB.'
   return null
 }
 
-export function BrandingSection() {
-  const query = useOrgSettingsQuery()
+function LoadState({ label, query }: { label: string; query: ReturnType<typeof useOrgSettingsQuery> }) {
+  if (query.isPending) {
+    return (
+      <div role="status" aria-label={`Loading ${label}`} className="flex flex-col gap-3">
+        <Skeleton className="h-11 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    )
+  }
   return (
-    <SettingsCard
-      id="branding"
-      title="Email branding & org theme"
-      description="Logo and brand color for emails and this app. The email layout is fixed."
+    <Alert
+      tone="red"
+      live="alert"
+      action={
+        <Button variant="secondary" size="sm" onClick={() => void query.refetch()}>
+          Try again
+        </Button>
+      }
     >
-      {query.isPending ? (
-        <div role="status" aria-label="Loading branding" className="flex flex-col gap-3">
-          <Skeleton className="h-11 w-full" />
-          <Skeleton className="h-40 w-full" />
-        </div>
-      ) : query.isError ? (
-        <Alert
-          tone="red"
-          live="alert"
-          action={
-            <Button variant="secondary" size="sm" onClick={() => void query.refetch()}>
-              Try again
-            </Button>
-          }
-        >
-          Could not load branding. {errorMessage(query.error)}
-        </Alert>
-      ) : (
-        <BrandingForm branding={query.data.branding} />
-      )}
-    </SettingsCard>
+      Could not load {label}. {errorMessage(query.error)}
+    </Alert>
   )
 }
 
-function BrandingForm({ branding }: { branding: Branding }) {
+/** "Organization theme · admins" block inside the Appearance card (canvas frame 15): brand color and logos. */
+export function OrgThemeSection() {
+  const query = useOrgSettingsQuery()
+  return (
+    <section aria-labelledby="org-theme-heading" className="flex flex-col gap-5">
+      <h3 id="org-theme-heading" className="text-[0.8125rem] font-semibold tracking-wide text-gray-700 uppercase dark:text-gray-300">
+        Organization theme · admins
+      </h3>
+      {query.isSuccess ? <ThemeForm branding={query.data.branding} /> : <LoadState label="the organization theme" query={query} />}
+    </section>
+  )
+}
+
+function ThemeForm({ branding }: { branding: Branding }) {
   const { toast } = useToast()
   const mutation = useSaveBrandingMutation()
   const {
@@ -80,39 +90,39 @@ function BrandingForm({ branding }: { branding: Branding }) {
     setError,
     reset,
     formState: { errors, isDirty },
-  } = useForm<BrandingFormValues>({
-    resolver: zodResolver(brandingFormSchema),
-    defaultValues: { brandColor: branding.brandColor.toUpperCase(), paymentDeadlineHours: branding.paymentDeadlineHours },
+  } = useForm<ThemeFormValues>({
+    resolver: zodResolver(themeFormSchema),
+    defaultValues: { brandColor: branding.brandColor.toUpperCase() },
   })
   const color = useWatch({ control, name: 'brandColor' }).trim()
-  const deadline = useWatch({ control, name: 'paymentDeadlineHours' })
   const valid = isHexColor(color)
   const ratio = valid ? contrastWithWhite(color) : null
   const lowContrast = ratio !== null && ratio < MIN_CONTRAST
-  const previewColor = valid && !lowContrast ? color : branding.brandColor
 
-  const onSubmit = handleSubmit((body) => {
+  const onSubmit = handleSubmit((values) => {
     if (mutation.isPending) return
-    const next = { ...body, brandColor: body.brandColor.toUpperCase() }
-    mutation.mutate(next, {
-      onSuccess: () => {
-        reset(next)
-        toast({ tone: 'success', title: 'Branding saved.', description: 'The brand color now applies across the app and in emails.' })
+    const next = { brandColor: values.brandColor.toUpperCase() }
+    mutation.mutate(
+      { ...next, paymentDeadlineHours: branding.paymentDeadlineHours },
+      {
+        onSuccess: () => {
+          reset(next)
+          toast({ tone: 'success', title: 'Branding saved.', description: 'The brand color now applies across the app and in emails.' })
+        },
+        onError: (e) => {
+          const fieldError = isApiError(e, 400) ? e.fieldErrors : {}
+          if (fieldError.brandColor) setError('brandColor', { type: 'server', message: fieldError.brandColor })
+          else toast({ tone: 'error', title: 'Could not save branding.', description: errorMessage(e) })
+        },
       },
-      onError: (e) => {
-        const fieldError = isApiError(e, 400) ? e.fieldErrors : {}
-        if (fieldError.brandColor) setError('brandColor', { type: 'server', message: fieldError.brandColor })
-        else if (fieldError.paymentDeadlineHours) setError('paymentDeadlineHours', { type: 'server', message: fieldError.paymentDeadlineHours })
-        else toast({ tone: 'error', title: 'Could not save branding.', description: errorMessage(e) })
-      },
-    })
+    )
   })
 
   return (
-    <div className="flex flex-col gap-6">
-      <form noValidate onSubmit={onSubmit} className="flex flex-col gap-5">
+    <div className="flex flex-col gap-5">
+      <form noValidate onSubmit={onSubmit} className="flex flex-col gap-4">
         <fieldset className="flex flex-col gap-3">
-          <legend className="mb-3 text-sm font-medium text-gray-700 dark:text-gray-200">Brand color</legend>
+          <legend className="mb-2.5 text-sm font-medium text-gray-900 dark:text-gray-50">Brand color</legend>
           <div role="radiogroup" aria-label="Brand color presets" className="flex flex-wrap gap-2">
             {swatches.map((s) => {
               const selected = color.toUpperCase() === s.hex
@@ -126,7 +136,7 @@ function BrandingForm({ branding }: { branding: Branding }) {
                   title={`${s.name} ${s.hex}`}
                   onClick={() => setValue('brandColor', s.hex, { shouldDirty: true, shouldValidate: true })}
                   className={cn(
-                    'inline-flex size-11 items-center justify-center rounded-md text-white ring-offset-2 dark:ring-offset-gray-900',
+                    'inline-flex size-11 items-center justify-center rounded-full text-white ring-offset-2 dark:ring-offset-gray-900',
                     selected ? 'ring-2 ring-gray-900 dark:ring-gray-50' : 'ring-1 ring-gray-900/10 dark:ring-white/15',
                   )}
                   style={{ backgroundColor: s.hex }}
@@ -158,23 +168,23 @@ function BrandingForm({ branding }: { branding: Branding }) {
           </div>
         </fieldset>
 
-        <Field label="Payment deadline (hours)" error={errors.paymentDeadlineHours?.message} hint="Shown in billing emails. 1 to 336 hours; default 48." className="w-56">
-          {(p) => <Input {...p} {...register('paymentDeadlineHours', { valueAsNumber: true })} type="number" inputMode="numeric" min={1} max={336} className="tabular-nums" />}
-        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <LogoTile variant="light" url={branding.logoLightUrl} />
+          <LogoTile variant="dark" url={branding.logoDarkUrl} />
+        </div>
 
-        <div>
+        <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" loading={mutation.isPending} disabled={!isDirty || lowContrast || !valid}>
             Save branding
           </Button>
+          <Button
+            variant="secondary"
+            onClick={() => setValue('brandColor', DEFAULT_BRAND.toUpperCase(), { shouldDirty: true, shouldValidate: true })}
+          >
+            Reset to HTN red
+          </Button>
         </div>
       </form>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <LogoTile variant="light" url={branding.logoLightUrl} />
-        <LogoTile variant="dark" url={branding.logoDarkUrl} />
-      </div>
-
-      <EmailPreview color={previewColor} logoUrl={branding.logoLightUrl} deadlineHours={Number.isFinite(deadline) ? deadline : branding.paymentDeadlineHours} />
     </div>
   )
 }
@@ -183,7 +193,7 @@ function LogoTile({ variant, url }: { variant: LogoVariant; url: string | null }
   const { toast } = useToast()
   const upload = useUploadLogoMutation()
   const [error, setError] = useState<string | null>(null)
-  const label = variant === 'light' ? 'Logo for light backgrounds' : 'Logo for dark backgrounds'
+  const label = variant === 'light' ? 'Logo for light mode' : 'Logo for dark mode'
 
   function onFile(file: File) {
     const problem = checkLogo(file)
@@ -199,18 +209,18 @@ function LogoTile({ variant, url }: { variant: LogoVariant; url: string | null }
   }
 
   return (
-    <div className="flex flex-col gap-2.5">
-      <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}</span>
+    <div className="flex flex-col gap-2">
+      <span className="text-[0.8125rem] font-medium text-gray-700 dark:text-gray-200">{label}</span>
       <div
         className={cn(
-          'flex h-24 items-center justify-center rounded-md ring-1 ring-inset',
-          variant === 'light' ? 'bg-white ring-gray-200' : 'bg-gray-900 ring-white/10',
+          'flex h-16 items-center justify-center rounded-md border border-dashed',
+          variant === 'light' ? 'border-gray-300 bg-white' : 'border-gray-600 bg-gray-900',
         )}
       >
         {url ? (
-          <img src={url} alt={`Current ${label.toLowerCase()}`} className="max-h-16 max-w-[80%] object-contain" />
+          <img src={url} alt={`Current ${label.toLowerCase()}`} className="max-h-12 max-w-[80%] object-contain" />
         ) : (
-          <span className={cn('text-[0.8125rem]', variant === 'light' ? 'text-gray-600' : 'text-gray-400')}>No logo yet</span>
+          <span className={cn('text-[0.8125rem] font-bold', variant === 'light' ? 'text-gray-900' : 'text-white')}>HackTheNorth.PH</span>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -229,7 +239,74 @@ function LogoTile({ variant, url }: { variant: LogoVariant; url: string | null }
   )
 }
 
-/** Live preview of the fixed billing email layout with the chosen color and light logo. */
+/** "Email branding" card: defaults for billing emails (deadline) with a live preview of the fixed layout. */
+export function BrandingSection() {
+  const query = useOrgSettingsQuery()
+  return (
+    <SettingsCard
+      id="branding"
+      title="Email branding"
+      description="Default logo, theme color and accounts for new events. Each event can override them."
+    >
+      {query.isSuccess ? <DeadlineForm branding={query.data.branding} /> : <LoadState label="email branding" query={query} />}
+    </SettingsCard>
+  )
+}
+
+function DeadlineForm({ branding }: { branding: Branding }) {
+  const { toast } = useToast()
+  const mutation = useSaveBrandingMutation()
+  const {
+    register,
+    control,
+    handleSubmit,
+    setError,
+    reset,
+    formState: { errors, isDirty },
+  } = useForm<DeadlineFormValues>({
+    resolver: zodResolver(deadlineFormSchema),
+    defaultValues: { paymentDeadlineHours: branding.paymentDeadlineHours },
+  })
+  const deadline = useWatch({ control, name: 'paymentDeadlineHours' })
+
+  const onSubmit = handleSubmit((values) => {
+    if (mutation.isPending) return
+    mutation.mutate(
+      { brandColor: branding.brandColor.toUpperCase(), ...values },
+      {
+        onSuccess: () => {
+          reset(values)
+          toast({ tone: 'success', title: 'Email branding saved.' })
+        },
+        onError: (e) => {
+          const fieldError = isApiError(e, 400) ? e.fieldErrors : {}
+          if (fieldError.paymentDeadlineHours) setError('paymentDeadlineHours', { type: 'server', message: fieldError.paymentDeadlineHours })
+          else toast({ tone: 'error', title: 'Could not save email branding.', description: errorMessage(e) })
+        },
+      },
+    )
+  })
+
+  return (
+    <div className="flex flex-col gap-6">
+      <form noValidate onSubmit={onSubmit} className="flex flex-wrap items-end gap-4">
+        <Field label="Payment deadline (hours)" error={errors.paymentDeadlineHours?.message} hint="Shown in billing emails. 1 to 336 hours; default 48." className="w-56">
+          {(p) => <Input {...p} {...register('paymentDeadlineHours', { valueAsNumber: true })} type="number" inputMode="numeric" min={1} max={336} className="tabular-nums" />}
+        </Field>
+        <Button type="submit" loading={mutation.isPending} disabled={!isDirty} className="mb-6">
+          Save email branding
+        </Button>
+      </form>
+      <EmailPreview
+        color={branding.brandColor}
+        logoUrl={branding.logoLightUrl}
+        deadlineHours={Number.isFinite(deadline) ? deadline : branding.paymentDeadlineHours}
+      />
+    </div>
+  )
+}
+
+/** Live preview of the fixed billing email layout with the saved color and light logo. */
 function EmailPreview({ color, logoUrl, deadlineHours }: { color: string; logoUrl: string | null; deadlineHours: number }) {
   return (
     <section aria-labelledby="email-preview-heading" className="flex flex-col gap-2.5">
@@ -240,11 +317,7 @@ function EmailPreview({ color, logoUrl, deadlineHours }: { color: string; logoUr
         {/* Emails are always light, so the preview stays light in dark mode too. */}
         <div className="mx-auto flex max-w-md flex-col overflow-hidden rounded-md bg-white text-gray-900 shadow-sm ring-1 ring-gray-900/5">
           <div className="flex h-14 items-center border-b border-gray-200 px-5">
-            {logoUrl ? (
-              <img src={logoUrl} alt="" className="max-h-8 object-contain" />
-            ) : (
-              <span className="text-sm font-semibold">HackTheNorth.PH</span>
-            )}
+            {logoUrl ? <img src={logoUrl} alt="" className="max-h-8 object-contain" /> : <span className="text-sm font-semibold">HackTheNorth.PH</span>}
           </div>
           <div className="flex flex-col gap-3 px-5 py-5 text-sm">
             <p className="text-base font-semibold">Complete your registration</p>

@@ -72,7 +72,7 @@ export function PeoplePage() {
         description="Board, goons, apprentices and members. Promote people along the path Member → Apprentice → Goon."
         actions={headerActions}
       />
-      <OrganizationTabs />
+      <OrganizationTabs peopleCount={counts.All} />
 
       <Card aria-label="People">
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 px-5 py-4 dark:border-white/10">

@@ -13,7 +13,7 @@ import { formatDate, initials } from '@/lib/format'
 import { usePersonQuery, useResendInviteMutation, useSendPasswordResetMutation } from '../api'
 import { fullName } from '../format'
 import { isDemotion, levelSchema, nextLevel, type HistoryEntry, type Level, type Person } from '../schemas'
-import { FinanceRoleBadges, LevelBadge } from './badges'
+import { FinanceRoleBadges } from './badges'
 import { DeactivateDialog } from './DeactivateDialog'
 import { EditPersonDialog } from './EditPersonDialog'
 import { PathProgress } from './PathProgress'
@@ -139,9 +139,7 @@ export function PersonDrawer({ person: listed, onClose }: { person: Person | nul
           <dl className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1 rounded-md p-3 ring-1 ring-gray-200 dark:ring-white/10">
               <dt className="text-xs text-gray-600 dark:text-gray-400">Level</dt>
-              <dd>
-                <LevelBadge level={person.level} />
-              </dd>
+              <dd className="text-sm font-semibold text-gray-900 dark:text-gray-50">{person.level}</dd>
             </div>
             <div className="flex flex-col gap-1 rounded-md p-3 ring-1 ring-gray-200 dark:ring-white/10">
               <dt className="text-xs text-gray-600 dark:text-gray-400">Position</dt>

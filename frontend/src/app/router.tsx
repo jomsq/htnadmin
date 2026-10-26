@@ -1,4 +1,4 @@
-import { createBrowserRouter, type RouteObject } from 'react-router'
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router'
 import { RedirectIfSignedIn, RequireAuth } from './auth/RequireAuth'
 import { RequirePolicy } from './auth/RequirePolicy'
 import { Policies } from './auth/policies'
@@ -6,6 +6,14 @@ import { AppLayout } from './layouts/AppLayout'
 import { ComingSoonPage } from './pages/ComingSoonPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { RouteErrorPage } from './pages/RouteErrorPage'
+
+const eventPlaceholder = (path: string, title: string, description: string): RouteObject => ({
+  path,
+  lazy: async () => {
+    const { EventPlaceholderPage } = await import('@/features/events/EventPlaceholderPage')
+    return { element: <EventPlaceholderPage title={title} description={description} /> }
+  },
+})
 
 const comingSoon = (path: string, title: string, description: string): RouteObject => ({
   path,
@@ -57,7 +65,30 @@ export const routes: RouteObject[] = [
                 path: '/settings/permissions',
                 lazy: async () => ({ Component: (await import('@/features/settings/PermissionsPage')).PermissionsPage }),
               },
-              comingSoon('/events', 'Events', 'Events, tickets, committees, registrations and check-in.'),
+              {
+                path: '/events',
+                element: <RequirePolicy policy={Policies.EventsView} />,
+                children: [
+                  { index: true, lazy: async () => ({ Component: (await import('@/features/events/EventsPage')).EventsPage }) },
+                  {
+                    path: 'new',
+                    element: <RequirePolicy policy={Policies.EventsManage} />,
+                    children: [{ index: true, lazy: async () => ({ Component: (await import('@/features/events/CreateEventPage')).CreateEventPage }) }],
+                  },
+                  {
+                    path: ':eventId',
+                    lazy: async () => ({ Component: (await import('@/features/events/EventLayout')).EventLayout }),
+                    children: [
+                      { index: true, element: <Navigate to="details" replace /> },
+                      { path: 'details', lazy: async () => ({ Component: (await import('@/features/events/EventDetailsPage')).EventDetailsPage }) },
+                      eventPlaceholder('registrations', 'Registrations', 'Registrations, payments and participant IDs will show here.'),
+                      eventPlaceholder('emails', 'Emails', 'Billing and ticket email settings for this event will show here.'),
+                      eventPlaceholder('check-in', 'Check-in', 'The phone scanner and the check-in desk will open from here.'),
+                      { path: '*', element: <NotFoundPage /> },
+                    ],
+                  },
+                ],
+              },
               comingSoon('/directory', 'Directory', 'Agencies, companies, universities, non-profits and suppliers.'),
               comingSoon('/store', 'Merch store', 'Leftover stock and pop-up stores.'),
               {

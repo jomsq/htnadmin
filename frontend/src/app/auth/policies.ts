@@ -5,6 +5,9 @@ export const Policies = {
   SettingsPersonal: 'Settings.Personal',
   SettingsManage: 'Settings.Manage',
   FinanceView: 'Finance.View',
+  /** Any signed-in user: published events. Drafts stay manager-only on the server. */
+  EventsView: 'Events.View',
+  EventsManage: 'Events.Manage',
 } as const
 
 export type Policy = (typeof Policies)[keyof typeof Policies] | (string & {})

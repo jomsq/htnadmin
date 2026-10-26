@@ -1,34 +1,26 @@
-import { CheckIcon } from '@/components/ui/icons'
 import { cn } from '@/lib/cn'
 import { levelRank, pathLevels, type Level } from '../schemas'
 
-/** Member → Apprentice → Goon, with the person's step marked. Board is a separate seat. */
+/** Member → Apprentice → Goon as filled bars up to the person's step (canvas frame 02). Board fills the whole path. */
 export function PathProgress({ level }: { level: Level }) {
   const current = levelRank[level]
   return (
     <div className="flex flex-col gap-2">
       <h3 className="text-[0.8125rem] font-semibold text-gray-700 dark:text-gray-300">Path</h3>
-      <ol aria-label="Path progress" className="grid grid-cols-3 gap-1.5">
+      <ol aria-label="Path progress" className="flex gap-1.5">
         {pathLevels.map((step) => {
-          const rank = levelRank[step]
-          const done = rank < current
+          const reached = levelRank[step] <= current
           const here = step === level
           return (
-            <li
-              key={step}
-              aria-current={here ? 'step' : undefined}
-              className={cn(
-                'flex h-9 items-center justify-center gap-1.5 rounded-md text-[0.8125rem] font-medium ring-1 ring-inset',
-                here
-                  ? 'bg-brand-50 text-brand-700 ring-brand-600 dark:bg-brand-300/10 dark:text-brand-300 dark:ring-brand-300'
-                  : done
-                    ? 'bg-gray-50 text-gray-700 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10'
-                    : 'bg-white text-gray-600 ring-gray-200 dark:bg-gray-900 dark:text-gray-400 dark:ring-white/10',
-              )}
-            >
-              {done ? <CheckIcon size={14} /> : null}
-              {step}
-              {done ? <span className="sr-only">(done)</span> : null}
+            <li key={step} aria-current={here ? 'step' : undefined} className="flex flex-1 flex-col gap-1.5">
+              <span
+                aria-hidden="true"
+                className={cn('h-1.5 rounded-full', reached ? 'bg-brand-600 dark:bg-brand-300' : 'bg-gray-200 dark:bg-white/10')}
+              />
+              <span className={cn('text-xs font-medium', reached ? 'text-gray-900 dark:text-gray-50' : 'text-gray-600 dark:text-gray-400')}>
+                {step}
+                {reached && !here ? <span className="sr-only"> (done)</span> : null}
+              </span>
             </li>
           )
         })}

@@ -36,7 +36,7 @@ type NavItem = {
 const navItems: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: DashboardIcon, end: true },
   { to: '/people', label: 'Organization', icon: PeopleIcon },
-  { to: '/events', label: 'Events', icon: CalendarIcon },
+  { to: '/events', label: 'Events', icon: CalendarIcon, policy: Policies.EventsView },
   { to: '/directory', label: 'Directory', icon: BuildingIcon },
   { to: '/store', label: 'Merch store', icon: BagIcon },
   { to: '/finance', label: 'Finance', icon: WalletIcon, locked: true, policy: Policies.FinanceView },

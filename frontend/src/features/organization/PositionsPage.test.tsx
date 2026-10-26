@@ -63,6 +63,9 @@ describe('PositionsPage', () => {
     const goons = screen.getByRole('table', { name: 'Goon positions' })
     expect(within(goons).getByRole('button', { name: 'Vacate Head of Programs' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Positions' })).toHaveAttribute('aria-current', 'page')
+    expect(await screen.findByText('Non-stock corporation · 2 seats')).toBeInTheDocument()
+    expect(await screen.findByText('Organizer roles · 2 goons')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'People · 4' })).toBeInTheDocument()
   })
 
   it('assigns a vacant position with a picker filtered to the right level', async () => {
@@ -151,7 +154,7 @@ describe('PositionsPage', () => {
     )
     const user = userEvent.setup()
     renderWithProviders(<PositionsPage />)
-    await user.click(await screen.findByRole('button', { name: '+ Position' }))
+    await user.click(await screen.findByRole('button', { name: 'Add a goon position' }))
     const dialog = await screen.findByRole('dialog', { name: 'New position' })
     await user.click(within(dialog).getByRole('button', { name: 'Add position' }))
     expect(within(dialog).getByText('Enter a title.')).toBeInTheDocument()
@@ -199,12 +202,14 @@ describe('PositionsPage', () => {
     expect(within(board).getByText('Alex Reyes')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Assign/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Vacate/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ Position' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Add a (board seat|goon position)$/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ Create account' })).not.toBeInTheDocument()
     expect(screen.queryByText('Finance roles')).not.toBeInTheDocument()
   })
 
   it('shows an error state with retry', async () => {
     signInAs(boardMe)
+    mockApi()
     server.use(http.get('/api/positions', () => problem(500, 'Server error')), http.get('/api/finance-roles', () => problem(500, 'x')))
     renderWithProviders(<PositionsPage />)
     expect(await screen.findByText(/Could not load positions/)).toBeInTheDocument()

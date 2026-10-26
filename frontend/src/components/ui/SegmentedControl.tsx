@@ -14,6 +14,7 @@ type Props<T extends string> = {
   onChange: (value: T) => void
   'aria-label'?: string
   'aria-labelledby'?: string
+  'aria-describedby'?: string
   /** segmented = gray track with white selected pill; chips = separate ring buttons (level picker). */
   variant?: 'segmented' | 'chips'
   className?: string

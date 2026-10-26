@@ -3,7 +3,6 @@ import { useCan } from '@/app/auth/auth-context'
 import { Policies } from '@/app/auth/policies'
 import { errorMessage } from '@/app/errors'
 import { Alert } from '@/components/ui/Alert'
-import { Avatar } from '@/components/ui/Avatar'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card, CardHeader } from '@/components/ui/Card'
@@ -12,8 +11,9 @@ import { PageHeader } from '@/components/ui/PageHeader'
 import { Skeleton } from '@/components/ui/Spinner'
 import { Table, TBody, Td, Th, THead, Tr } from '@/components/ui/Table'
 import { PeopleIcon } from '@/components/ui/icons'
-import { initials } from '@/lib/format'
-import { usePositionsQuery } from './api'
+import { useLevelCounts, usePositionsQuery } from './api'
+import { CreateAccountDialog } from './components/CreateAccountDialog'
+import { ImportCsvDialog } from './components/ImportCsvDialog'
 import { FinanceRolesCard } from './components/FinanceRolesCard'
 import { OrganizationTabs } from './components/OrganizationTabs'
 import { AssignDialog, EditPositionDialog, NewPositionDialog, VacateDialog } from './components/PositionDialogs'
@@ -24,25 +24,39 @@ type Modal =
   | { kind: 'assign' | 'vacate' | 'edit'; position: Position }
   | null
 
-const cards: ReadonlyArray<{ kind: PositionKind; title: string; description: string; empty: string }> = [
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+/** Card titles and sub lines follow the canvas (frame 02, Positions tab). */
+const cards: ReadonlyArray<{
+  kind: PositionKind
+  title: string
+  addLabel: string
+  empty: string
+  sub: (seats: number, goons: number | undefined) => string
+}> = [
   {
     kind: 'BoardSeat',
     title: 'Board of Trustees',
-    description: 'Seats of the non-stock corporation. Board members are admins.',
+    addLabel: 'Add a board seat',
     empty: 'No board seats yet.',
+    sub: (seats) => `Non-stock corporation · ${plural(seats, 'seat', 'seats')}`,
   },
   {
     kind: 'GoonPosition',
     title: 'Goon positions',
-    description: 'Organizer positions held by goons.',
+    addLabel: 'Add a goon position',
     empty: 'No goon positions yet.',
+    sub: (_seats, goons) => (goons === undefined ? 'Organizer roles' : `Organizer roles · ${plural(goons, 'goon', 'goons')}`),
   },
 ]
 
 export function PositionsPage() {
   const canManage = useCan(Policies.PeopleManage)
   const query = usePositionsQuery()
+  const counts = useLevelCounts()
   const [modal, setModal] = useState<Modal>(null)
+  const [creating, setCreating] = useState(false)
+  const [importing, setImporting] = useState(false)
   const close = () => setModal(null)
   const positions = query.data ?? []
 
@@ -51,9 +65,18 @@ export function PositionsPage() {
       <PageHeader
         title="Organization"
         description="Board, goons, apprentices and members. Promote people along the path Member → Apprentice → Goon."
-        actions={canManage ? <Button onClick={() => setModal({ kind: 'new', positionKind: 'GoonPosition' })}>+ Position</Button> : null}
+        actions={
+          canManage ? (
+            <>
+              <Button variant="secondary" onClick={() => setImporting(true)}>
+                Import CSV
+              </Button>
+              <Button onClick={() => setCreating(true)}>+ Create account</Button>
+            </>
+          ) : null
+        }
       />
-      <OrganizationTabs />
+      <OrganizationTabs peopleCount={counts.All} />
 
       {query.isError ? (
         <Alert
@@ -69,24 +92,32 @@ export function PositionsPage() {
         </Alert>
       ) : (
         <div className="grid gap-5 xl:grid-cols-2">
-          {cards.map((c) => (
-            <PositionCard
-              key={c.kind}
-              {...c}
-              loading={query.isPending}
-              positions={positions
-                .filter((p) => p.kind === c.kind && (p.isActive || canManage))
-                .sort((a, b) => Number(b.isActive) - Number(a.isActive) || a.sortOrder - b.sortOrder)}
-              canManage={canManage}
-              onAction={setModal}
-              onAdd={() => setModal({ kind: 'new', positionKind: c.kind })}
-            />
-          ))}
+          {cards.map((c) => {
+            const list = positions
+              .filter((p) => p.kind === c.kind && (p.isActive || canManage))
+              .sort((a, b) => Number(b.isActive) - Number(a.isActive) || a.sortOrder - b.sortOrder)
+            return (
+              <PositionCard
+                key={c.kind}
+                title={c.title}
+                addLabel={c.addLabel}
+                empty={c.empty}
+                description={c.sub(list.filter((p) => p.isActive).length, counts.Goon)}
+                loading={query.isPending}
+                positions={list}
+                canManage={canManage}
+                onAction={setModal}
+                onAdd={() => setModal({ kind: 'new', positionKind: c.kind })}
+              />
+            )
+          })}
         </div>
       )}
 
       {canManage ? <FinanceRolesCard /> : null}
 
+      {canManage ? <CreateAccountDialog open={creating} onClose={() => setCreating(false)} /> : null}
+      {canManage && importing ? <ImportCsvDialog onClose={() => setImporting(false)} /> : null}
       {modal?.kind === 'new' ? <NewPositionDialog initialKind={modal.positionKind} onClose={close} /> : null}
       {modal?.kind === 'assign' ? <AssignDialog position={modal.position} positions={positions} onClose={close} /> : null}
       {modal?.kind === 'vacate' ? <VacateDialog position={modal.position} onClose={close} /> : null}
@@ -96,8 +127,8 @@ export function PositionsPage() {
 }
 
 type CardProps = {
-  kind: PositionKind
   title: string
+  addLabel: string
   description: string
   empty: string
   loading: boolean
@@ -107,11 +138,21 @@ type CardProps = {
   onAdd: () => void
 }
 
-function PositionCard({ title, description, empty, loading, positions, canManage, onAction, onAdd }: CardProps) {
+function PositionCard({ title, addLabel, description, empty, loading, positions, canManage, onAction, onAdd }: CardProps) {
   const headingId = `${title.replace(/\W+/g, '-').toLowerCase()}-heading`
   return (
     <Card aria-labelledby={headingId}>
-      <CardHeader title={<span id={headingId}>{title}</span>} description={description} />
+      <CardHeader
+        title={<span id={headingId}>{title}</span>}
+        description={description}
+        action={
+          canManage ? (
+            <Button variant="secondary" size="sm" aria-label={addLabel} onClick={onAdd}>
+              + Position
+            </Button>
+          ) : null
+        }
+      />
       {loading ? (
         <div role="status" aria-label={`Loading ${title}`} className="flex flex-col gap-3 p-5">
           <Skeleton className="h-5 w-3/4" />
@@ -154,14 +195,11 @@ function PositionCard({ title, description, empty, loading, positions, canManage
                 </Td>
                 <Td>
                   {p.holder ? (
-                    <span className="flex items-center gap-2.5">
-                      <Avatar initials={initials(p.holder.firstName, p.holder.lastName)} />
-                      <span className="text-gray-900 dark:text-gray-50">
-                        {p.holder.firstName} {p.holder.lastName}
-                      </span>
+                    <span className="text-gray-700 dark:text-gray-300">
+                      {p.holder.firstName} {p.holder.lastName}
                     </span>
                   ) : (
-                    <Badge color="yellow">Vacant</Badge>
+                    <span className="font-medium text-yellow-800 dark:text-yellow-300">Vacant</span>
                   )}
                 </Td>
                 {canManage ? (

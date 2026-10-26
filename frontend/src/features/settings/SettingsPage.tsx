@@ -11,7 +11,7 @@ import { PageHeader } from '@/components/ui/PageHeader'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { ChevronRightIcon } from '@/components/ui/icons'
 import { cn } from '@/lib/cn'
-import { BrandingSection } from './components/BrandingSection'
+import { BrandingSection, OrgThemeSection } from './components/BrandingSection'
 import { PaymentAccountsSection } from './components/PaymentAccountsSection'
 import { PointsSection } from './components/PointsSection'
 
@@ -22,7 +22,7 @@ const sections: ReadonlyArray<{ id: SectionId; label: string; manage: boolean }>
   { id: 'appearance', label: 'Appearance', manage: false },
   { id: 'points', label: 'Points', manage: true },
   { id: 'payments', label: 'Payment accounts', manage: true },
-  { id: 'branding', label: 'Email branding & org theme', manage: true },
+  { id: 'branding', label: 'Email branding', manage: true },
 ]
 
 const navItemClass = 'flex min-h-10 items-center gap-2 rounded-md px-3 text-sm'
@@ -59,7 +59,7 @@ export function SettingsPage() {
     <>
       <PageHeader
         title="Settings"
-        description={canManage ? 'Your display preferences and the organization settings.' : 'Your display preferences. Changes save automatically.'}
+        description={canManage ? 'Organization-wide defaults. Admins only.' : 'Your display preferences. Changes save automatically.'}
       />
 
       <div className="flex flex-wrap items-start gap-6">
@@ -100,7 +100,7 @@ export function SettingsPage() {
         </nav>
 
         <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
-          {current === 'appearance' ? <AppearanceSection /> : null}
+          {current === 'appearance' ? <AppearanceSection canManage={canManage} /> : null}
           {current === 'points' ? <PointsSection /> : null}
           {current === 'payments' ? <PaymentAccountsSection /> : null}
           {current === 'branding' ? <BrandingSection /> : null}
@@ -110,7 +110,7 @@ export function SettingsPage() {
   )
 }
 
-function AppearanceSection() {
+function AppearanceSection({ canManage }: { canManage: boolean }) {
   const { preferences, resolvedTheme, setPreferences } = useTheme()
   const modeId = useId()
   const sizeId = useId()
@@ -124,7 +124,11 @@ function AppearanceSection() {
         <h2 id="appearance-heading" className="text-base font-semibold text-gray-900 dark:text-gray-50">
           Appearance
         </h2>
-        <p className="text-sm text-gray-600 dark:text-gray-400">"Your display" applies only to you.</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          {canManage
+            ? '"Your display" applies only to you. "Organization theme" changes the look for everyone and the attendee pages.'
+            : '"Your display" applies only to you.'}
+        </p>
       </div>
       <div className="flex flex-col gap-5">
         <h3 className="text-[0.8125rem] font-semibold tracking-wide text-gray-700 uppercase dark:text-gray-300">Your display</h3>
@@ -149,6 +153,7 @@ function AppearanceSection() {
           />
         </Row>
       </div>
+      {canManage ? <OrgThemeSection /> : null}
     </Card>
   )
 }

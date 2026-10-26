@@ -41,7 +41,7 @@ describe('SettingsPage navigation', () => {
         'Appearance',
         'Points',
         'Payment accounts',
-        'Email branding & org theme',
+        'Email branding',
         'Roles & permissions',
       ]),
     )
@@ -85,7 +85,7 @@ describe('Points', () => {
     expect(lead).toHaveValue(2)
     expect(screen.getByRole('button', { name: 'Increase Lead multiplier' })).toBeDisabled()
 
-    await user.click(screen.getByRole('switch', { name: 'Require approval' }))
+    await user.click(screen.getByRole('switch', { name: 'Require approval before awarding' }))
     await user.click(screen.getByRole('button', { name: 'Save points' }))
     expect(await screen.findByText('Points settings saved.')).toBeInTheDocument()
     expect(saved).toEqual({ ...orgSettings.points, leadMultiplier: 2, collabMultiplier: 0.8, requireTaskApproval: false })
@@ -113,7 +113,7 @@ describe('Points', () => {
     expect(screen.getByText('Must be more than Medium.')).toBeInTheDocument()
     expect(calls).toBe(0)
 
-    await user.click(screen.getByRole('button', { name: 'Reset to defaults' }))
+    await user.click(screen.getByRole('button', { name: 'Reset to 1.0 / 0.7 / 0.3' }))
     expect(screen.getByLabelText('Assistant multiplier')).toHaveValue(0.3)
     expect(screen.getByLabelText('Large')).toHaveValue(40)
   })
@@ -124,8 +124,8 @@ describe('Payment accounts', () => {
     signInAs(boardMe)
     server.use(http.get('/api/settings/payment-accounts', () => HttpResponse.json(accounts)))
     renderWithProviders(<SettingsPage />, '/settings?section=payments')
-    const table = await screen.findByRole('table', { name: 'Payment accounts' })
-    const gcash = within(table).getByText('GCash — HTN').closest('tr') as HTMLElement
+    const list = await screen.findByRole('list', { name: 'Payment accounts' })
+    const gcash = within(list).getByText('GCash — HTN').closest('li') as HTMLElement
     expect(within(gcash).getByText('Default')).toBeInTheDocument()
     expect(within(gcash).getByText('0917 123 4567')).toBeInTheDocument()
   })
@@ -142,7 +142,7 @@ describe('Payment accounts', () => {
     )
     const user = userEvent.setup()
     renderWithProviders(<SettingsPage />, '/settings?section=payments')
-    await user.click((await screen.findAllByRole('button', { name: '+ Add account' }))[0])
+    await user.click(await screen.findByRole('button', { name: '+ Account' }))
     const dialog = await screen.findByRole('dialog', { name: 'Add payment account' })
     await user.selectOptions(within(dialog).getByLabelText('Type'), 'Bank')
     await user.click(within(dialog).getByRole('button', { name: 'Add account' }))
@@ -209,11 +209,31 @@ describe('Payment accounts', () => {
   })
 })
 
-describe('Email branding & org theme', () => {
+describe('Organization theme and email branding', () => {
+  it('saves the payment deadline from Email branding, keeping the brand color', async () => {
+    signInAs(boardMe)
+    let body: unknown
+    server.use(
+      http.put('/api/settings/branding', async ({ request }) => {
+        body = await request.json()
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<SettingsPage />, '/settings?section=branding')
+    expect(await screen.findByRole('heading', { name: 'Email branding' })).toBeInTheDocument()
+    const hours = await screen.findByLabelText('Payment deadline (hours)')
+    await user.clear(hours)
+    await user.type(hours, '72')
+    await user.click(screen.getByRole('button', { name: 'Save email branding' }))
+    expect(await screen.findByText('Email branding saved.')).toBeInTheDocument()
+    expect(body).toEqual({ brandColor: '#B71C1C', paymentDeadlineHours: 72 })
+  })
+
   it('warns about low contrast against white and blocks saving', async () => {
     signInAs(boardMe)
     const user = userEvent.setup()
-    renderWithProviders(<SettingsPage />, '/settings?section=branding')
+    renderWithProviders(<SettingsPage />, '/settings')
     const hex = await screen.findByLabelText('Hex')
     expect(screen.getByText(/Contrast 6\.57:1 with white text/)).toBeInTheDocument()
     await user.clear(hex)
@@ -235,7 +255,7 @@ describe('Email branding & org theme', () => {
       }),
     )
     const user = userEvent.setup()
-    renderWithProviders(<SettingsPage />, '/settings?section=branding')
+    renderWithProviders(<SettingsPage />, '/settings')
     await user.click(await screen.findByRole('radio', { name: 'Blue #1D4ED8' }))
     expect(screen.getByLabelText('Hex')).toHaveValue('#1D4ED8')
     await user.click(screen.getByRole('button', { name: 'Save branding' }))
@@ -251,7 +271,7 @@ describe('Email branding & org theme', () => {
       ),
     )
     const user = userEvent.setup()
-    renderWithProviders(<SettingsPage />, '/settings?section=branding')
+    renderWithProviders(<SettingsPage />, '/settings')
     await user.click(await screen.findByRole('radio', { name: 'Teal #0F766E' }))
     await user.click(screen.getByRole('button', { name: 'Save branding' }))
     expect(await screen.findByText('Too light for white text.')).toBeInTheDocument()
@@ -271,7 +291,7 @@ describe('Email branding & org theme', () => {
       }),
     )
     const user = userEvent.setup({ applyAccept: false })
-    renderWithProviders(<SettingsPage />, '/settings?section=branding')
+    renderWithProviders(<SettingsPage />, '/settings')
     await screen.findByRole('button', { name: 'Upload dark logo' })
     const inputs = document.querySelectorAll<HTMLInputElement>('input[type="file"]')
     await user.upload(inputs[1], new File(['x'], 'logo.jpg', { type: 'image/jpeg' }))
@@ -280,6 +300,6 @@ describe('Email branding & org theme', () => {
     expect(await screen.findByText('Dark logo uploaded.')).toBeInTheDocument()
     expect(variant).toBe('dark')
     expect(hasFile).toBe(true)
-    expect(await screen.findByRole('img', { name: 'Current logo for dark backgrounds' })).toHaveAttribute('src', '/api/files/f1')
+    expect(await screen.findByRole('img', { name: 'Current logo for dark mode' })).toHaveAttribute('src', '/api/files/f1')
   })
 })

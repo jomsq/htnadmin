@@ -23,6 +23,12 @@ const codeMessages: Record<string, string> = {
   self_change: "You can't change your own role. Ask another board member.",
   wrong_level: "This person's level doesn't fit that role.",
   low_contrast: 'This color is too light for white text. Pick a darker shade (contrast 4.5:1 or more).',
+  no_tickets: 'Add at least one active ticket type before publishing.',
+  duplicate_slug: 'Another event already uses this page link. Pick a different one.',
+  slug_locked: 'The page link is locked once the event has been published.',
+  price_locked: "The price can't change after tickets have been sold.",
+  duplicate_code: 'This voucher code is already used for this event.',
+  duplicate_main_event: 'Another event is already the main event for that membership year.',
 }
 
 /** Message for a known API error code, if any. */
