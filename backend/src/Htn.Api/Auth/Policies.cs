@@ -9,6 +9,7 @@ public static class Policies
     public const string PeopleManage = "People.Manage";
     public const string PeopleView = "People.View";
     public const string EventsManage = "Events.Manage";
+    public const string EventsView = "Events.View";
     public const string CommitteesManageMembers = "Committees.ManageMembers";
     public const string TasksManage = "Tasks.Manage";
     public const string TasksWork = "Tasks.Work";
@@ -37,14 +38,14 @@ public static class Policies
 
     public static readonly IReadOnlyList<string> All =
     [
-        PeopleManage, PeopleView, EventsManage, CommitteesManageMembers, TasksManage, TasksWork, TasksViewBoard,
+        PeopleManage, PeopleView, EventsManage, EventsView, CommitteesManageMembers, TasksManage, TasksWork, TasksViewBoard,
         RegistrationsManage, CheckInScan, SponsorsManage, LeadsManage, InvitationsManage, DirectoryManage, DirectoryView,
         SpeakersManage, SuppliersManage, SuppliersView, SuppliersRate, MerchManage, MerchSell, PopUpsManage, PopUpsSell,
         FinanceView, FinancePost, FinanceApprove, FinanceRequest, SettingsManage, SettingsPersonal,
     ];
 
     /// <summary>
-    /// Phase 1 implements People.* and Settings.Personal. Everything else is registered as Board-only
+    /// Phase 1 implements People.* and Settings.Personal; Phase 3 adds Events.View (any signed-in Board/Goon/Apprentice). Everything else is registered as Board-only
     /// (Finance.Post/Approve as CFO-only) until its slice adds the scoped handlers.
     /// </summary>
     public static AuthorizationBuilder AddHtnPolicies(this AuthorizationBuilder auth)
@@ -54,11 +55,12 @@ public static class Policies
         auth.AddPolicy(PeopleView, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board, Roles.Goon, Roles.Apprentice));
         auth.AddPolicy(PeopleManage, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board));
         auth.AddPolicy(SettingsPersonal, p => p.RequireAuthenticatedUser());
+        auth.AddPolicy(EventsView, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board, Roles.Goon, Roles.Apprentice));
 
         auth.AddPolicy(FinancePost, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board).RequireClaim(HtnClaimTypes.Cfo, "true"));
         auth.AddPolicy(FinanceApprove, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board).RequireClaim(HtnClaimTypes.Cfo, "true"));
 
-        string[] implemented = [PeopleView, PeopleManage, SettingsPersonal, FinancePost, FinanceApprove];
+        string[] implemented = [PeopleView, PeopleManage, SettingsPersonal, EventsView, FinancePost, FinanceApprove];
         foreach (var name in All.Except(implemented))
             auth.AddPolicy(name, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board));
 

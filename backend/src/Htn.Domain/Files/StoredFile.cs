@@ -8,7 +8,11 @@ public sealed class StoredFile
     public const int ContentTypeMaxLength = 100;
     public const int PurposeMaxLength = 50;
     public const int FileNameMaxLength = 200;
+    /// <summary>Default per-file limit (logos, CSVs). Some purposes allow more: see <see cref="StoredFilePurposes.MaxBytesFor"/>.</summary>
     public const long MaxBytes = 1024 * 1024;
+
+    /// <summary>Hard ceiling for any stored file (also the database check constraint).</summary>
+    public const long AbsoluteMaxBytes = 5 * 1024 * 1024;
 
     private StoredFile() { }
 
@@ -27,7 +31,9 @@ public sealed class StoredFile
     public static StoredFile Create(
         string contentType, long sizeBytes, string sha256, string purpose, string? originalName, DateTimeOffset at, Guid? actorId)
     {
-        if (sizeBytes is <= 0 or > MaxBytes) throw new DomainException("File must be between 1 byte and 1 MB.");
+        var max = StoredFilePurposes.MaxBytesFor(purpose);
+        if (sizeBytes <= 0 || sizeBytes > max)
+            throw new DomainException($"File must be between 1 byte and {max / (1024 * 1024)} MB.");
         if (sha256 is not { Length: 64 }) throw new DomainException("Invalid checksum.");
         var name = originalName?.Trim();
         if (name is { Length: > FileNameMaxLength }) name = name[..FileNameMaxLength];
@@ -49,15 +55,30 @@ public static class StoredFilePurposes
 {
     public const string LogoLight = "logo_light";
     public const string LogoDark = "logo_dark";
+    public const string EventCover = "event_cover";
+
+    public const long EventCoverMaxBytes = 2 * 1024 * 1024;
 
     /// <summary>Purposes that any signed-in user may download through <c>GET /api/files/{id}</c>.</summary>
     public static readonly IReadOnlyList<string> PublicToMembers = [LogoLight, LogoDark];
+
+    /// <summary>Purposes anyone (no sign-in) may download through <c>GET /api/public/files/{id}</c>: the public page and emails.</summary>
+    public static readonly IReadOnlyList<string> PublicToEveryone = [LogoLight, LogoDark, EventCover];
+
+    public static long MaxBytesFor(string purpose) => purpose switch
+    {
+        EventCover => EventCoverMaxBytes,
+        _ => StoredFile.MaxBytes,
+    };
 }
 
 public static class FileSignatures
 {
     /// <summary>Largest width or height accepted for an uploaded image (keeps decode memory bounded for viewers).</summary>
     public const int MaxImageDimension = 4096;
+
+    public const string PngContentType = "image/png";
+    public const string JpegContentType = "image/jpeg";
 
     private static ReadOnlySpan<byte> Png => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
@@ -69,4 +90,60 @@ public static class FileSignatures
     public static (uint Width, uint Height) PngSize(ReadOnlySpan<byte> data) =>
         (System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.Slice(16, 4)),
          System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.Slice(20, 4)));
+
+    /// <summary>JPEG start-of-image marker followed by another marker (FF D8 FF).</summary>
+    public static bool IsJpeg(ReadOnlySpan<byte> data) =>
+        data.Length >= 4 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF;
+
+    /// <summary>
+    /// Width and height from the first SOF (start-of-frame) segment, walking the marker segments after SOI.
+    /// Returns (0, 0) when the data is truncated or malformed, or no frame header comes before the image data.
+    /// </summary>
+    public static (uint Width, uint Height) JpegSize(ReadOnlySpan<byte> data)
+    {
+        if (!IsJpeg(data)) return (0, 0);
+        var i = 2;
+        while (i < data.Length)
+        {
+            if (data[i] != 0xFF) return (0, 0);
+            while (i < data.Length && data[i] == 0xFF) i++; // fill bytes
+            if (i >= data.Length) return (0, 0);
+            var marker = data[i++];
+            // Standalone markers without a length: TEM and RST0–7. SOI again is malformed; EOI/SOS before a frame header means no size.
+            if (marker == 0x01 || marker is >= 0xD0 and <= 0xD7) continue;
+            if (marker is 0xD8 or 0xD9 or 0xDA) return (0, 0);
+            if (i + 2 > data.Length) return (0, 0);
+            var length = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data.Slice(i, 2));
+            if (length < 2 || i + length > data.Length) return (0, 0);
+            // SOF0–SOF15, except DHT (C4), JPG (C8) and DAC (CC).
+            if (marker is >= 0xC0 and <= 0xCF && marker is not (0xC4 or 0xC8 or 0xCC))
+            {
+                if (length < 7) return (0, 0);
+                var height = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data.Slice(i + 3, 2));
+                var width = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data.Slice(i + 5, 2));
+                return (width, height);
+            }
+            i += length;
+        }
+        return (0, 0);
+    }
+
+    /// <summary>
+    /// Detects a PNG (or, when allowed, a JPEG) from its bytes, never the declared type, and reads its pixel size.
+    /// Returns null when the bytes are not a supported image or the size can't be read.
+    /// </summary>
+    public static (string ContentType, uint Width, uint Height)? DetectImage(ReadOnlySpan<byte> data, bool allowJpeg)
+    {
+        if (IsPng(data))
+        {
+            var (w, h) = PngSize(data);
+            return w == 0 || h == 0 ? null : (PngContentType, w, h);
+        }
+        if (allowJpeg && IsJpeg(data))
+        {
+            var (w, h) = JpegSize(data);
+            return w == 0 || h == 0 ? null : (JpegContentType, w, h);
+        }
+        return null;
+    }
 }

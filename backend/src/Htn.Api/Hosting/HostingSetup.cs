@@ -103,6 +103,9 @@ public static class HostingSetup
 
 public static class HostingLimits
 {
-    /// <summary>Kestrel's global request body cap. Must stay above the 1 MB upload limit plus multipart overhead.</summary>
+    /// <summary>
+    /// Kestrel's global request body cap. Must stay above the 1 MB upload limit plus multipart overhead. Larger uploads
+    /// (event covers, 2 MB) raise the limit for their own request in <c>Uploads.ReadSingleFileAsync</c>.
+    /// </summary>
     public const long MaxRequestBodyBytes = 2 * 1024 * 1024;
 }

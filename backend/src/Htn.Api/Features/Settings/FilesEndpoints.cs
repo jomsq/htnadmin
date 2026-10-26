@@ -17,11 +17,31 @@ public static class FilesEndpoints
         return g;
     }
 
-    private static async Task<IResult> Get(Guid id, HttpContext http, HtnDbContext db, IFileStorage storage, CancellationToken ct)
+    /// <summary>
+    /// Anonymous downloads for the public registration page and emails: logos and event covers only. Every other
+    /// purpose (payment proofs, documents…) is a 404 here, the same as an unknown ID.
+    /// </summary>
+    public static RouteGroupBuilder MapPublicFiles(this IEndpointRouteBuilder app)
     {
+        var g = app.MapGroup("/api/public/files").WithTags("Files");
+        g.MapGet("/{id:guid}", GetPublic).AllowAnonymous().AllowWithoutTwoFactor();
+        return g;
+    }
+
+    public static string PublicFileUrl(Guid id) => $"/api/public/files/{id}";
+
+    private static Task<IResult> Get(Guid id, HttpContext http, HtnDbContext db, IFileStorage storage, CancellationToken ct) =>
         // Only logo files are served here; anything else stored later needs its own endpoint and policy.
+        Serve(id, StoredFilePurposes.PublicToMembers, http, db, storage, ct);
+
+    private static Task<IResult> GetPublic(Guid id, HttpContext http, HtnDbContext db, IFileStorage storage, CancellationToken ct) =>
+        Serve(id, StoredFilePurposes.PublicToEveryone, http, db, storage, ct);
+
+    private static async Task<IResult> Serve(
+        Guid id, IReadOnlyList<string> purposes, HttpContext http, HtnDbContext db, IFileStorage storage, CancellationToken ct)
+    {
         var meta = await db.StoredFiles.AsNoTracking()
-            .SingleOrDefaultAsync(f => f.Id == id && StoredFilePurposes.PublicToMembers.Contains(f.Purpose), ct);
+            .SingleOrDefaultAsync(f => f.Id == id && purposes.Contains(f.Purpose), ct);
         if (meta is null) return TypedResults.NotFound();
         var stream = await storage.OpenReadAsync(id, ct);
         if (stream is null) return TypedResults.NotFound();

@@ -20,6 +20,10 @@ public static class Uploads
         if (request.ContentLength is { } length && length > maxBytes + MultipartOverhead)
             return (null, Problems.Field(field, tooLargeMessage, "file_too_large"));
 
+        // Fit the server's body limit to this upload (it may be above or below the global HostingLimits cap).
+        var sizeLimit = request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (sizeLimit is { IsReadOnly: false }) sizeLimit.MaxRequestBodySize = maxBytes + MultipartOverhead;
+
         IFormCollection form;
         try
         {

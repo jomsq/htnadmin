@@ -16,6 +16,7 @@ Each capability below is a **named policy** in `Htn.Api/Auth/Policies.cs`. Resou
 | `People.Manage` (create accounts, levels, promotions, positions) | ✓ | — | — | — |
 | `People.View` | ✓ | view | view | view |
 | `Events.Manage` (event, tickets, vouchers, settings) | ✓ | — | — | — |
+| `Events.View` (events list and details; Drafts and vouchers only with `Events.Manage`) | ✓ | ✓ | ✓ | ✓ |
 | `Committees.ManageMembers` | ✓ | own committee | — | — |
 | `Tasks.Manage` (create, assign, set points, approve to Done) | ✓ | own committee | — | — |
 | `Tasks.Work` (move own cards, comment, checklist) | ✓ | ✓ | own tasks | own tasks |

@@ -70,7 +70,8 @@ internal sealed class StoredFileConfiguration : IEntityTypeConfiguration<StoredF
     {
         b.ToTable("stored_files", t =>
         {
-            t.HasCheckConstraint("ck_stored_files_size", $"size_bytes > 0 AND size_bytes <= {StoredFile.MaxBytes}");
+            // Per-purpose limits are enforced by StoredFile.Create; the database keeps a hard ceiling.
+            t.HasCheckConstraint("ck_stored_files_size", $"size_bytes > 0 AND size_bytes <= {StoredFile.AbsoluteMaxBytes}");
             t.HasCheckConstraint("ck_stored_files_sha256", "sha256 ~ '^[0-9a-f]{64}$'");
         });
         b.HasKey(f => f.Id);

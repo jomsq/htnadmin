@@ -1,3 +1,4 @@
+using Htn.Domain.Events;
 using Htn.Domain.Organization;
 using Htn.Infrastructure.Data;
 using Htn.Infrastructure.Identity;
@@ -32,6 +33,7 @@ public static class DevSeeder
         await EnsureAsync(db, users, clock, "Paolo", "Garcia", "paolo@hackthenorth.ph", PersonLevel.Member, null, ct);
         await EnsureAsync(db, users, clock, "Leo", "Navarro", "leo@hackthenorth.ph", PersonLevel.Board, "Treasurer", ct);
         await EnsurePositionsAsync(db, clock, ct);
+        await EnsureEventsAsync(db, clock, ct);
         logger.LogInformation("Development seed data is in place");
     }
 
@@ -72,5 +74,48 @@ public static class DevSeeder
         var result = await users.CreateAsync(user, DevPassword);
         if (!result.Succeeded) throw new InvalidOperationException(string.Join("; ", result.Errors.Select(e => e.Description)));
         await users.AddToRoleAsync(user, Roles.For(level));
+    }
+
+    public const string SampleEventSlug = "htn-con-2026";
+    public const string SampleDraftSlug = "student-ctf";
+
+    /// <summary>
+    /// Sample events from the design canvas: HTN Con 2026 on sale with four ticket types and STUDENT20, and the
+    /// Student CTF draft. Times are Asia/Manila (+08:00). Skipped per event when its slug already exists.
+    /// </summary>
+    private static async Task EnsureEventsAsync(HtnDbContext db, TimeProvider clock, CancellationToken ct)
+    {
+        var now = clock.GetUtcNow();
+        var manila = TimeSpan.FromHours(8);
+        if (!await db.Events.AnyAsync(e => e.Slug == SampleEventSlug, ct))
+        {
+            var con = Event.Create("HTN Con 2026", SampleEventSlug,
+                new DateTimeOffset(2026, 11, 22, 8, 0, 0, manila), new DateTimeOffset(2026, 11, 22, 18, 0, 0, manila),
+                "SMX Convention Center, Pasay", 400,
+                "The yearly HackTheNorth.PH conference: talks, workshops and villages for the security community.", now, null);
+            con.UpdateRegistrationSettings(manualRegistration: true, groupRegistration: true, publicPage: true, ProofMode.Upload,
+                isMainEvent: true, membershipFee: 300m, membershipYear: 2026, now, null);
+            db.Events.Add(con);
+
+            DateTimeOffset salesStart = new(2026, 10, 16, 0, 0, 0, manila), salesEnd = new(2026, 11, 20, 23, 59, 0, manila);
+            var regular = TicketType.Create(con.Id, "Regular", 1500m, 200, 1, salesStart, salesEnd, TicketVisibility.Public, 1, now);
+            var student = TicketType.Create(con.Id, "Student", 800m, 40, 1, salesStart, salesEnd, TicketVisibility.Public, 2, now);
+            var team = TicketType.Create(con.Id, "Team of 5", 6000m, 10, 5, salesStart, salesEnd, TicketVisibility.Public, 3, now);
+            var comp = TicketType.Create(con.Id, "Sponsor comp", 0m, 30, 1, null, null, TicketVisibility.Hidden, 4, now);
+            db.TicketTypes.AddRange(regular, student, team, comp);
+            db.Vouchers.Add(Voucher.Create(con.Id, "STUDENT20", VoucherKind.Percent, 20m, [student.Id], 50,
+                new DateTimeOffset(2026, 11, 15, 23, 59, 0, manila), VoucherSource.Manual, now));
+
+            if (con.EndsAt > now) con.Publish(hasActiveTicket: true, now, null); // after the event date the sample stays a draft
+            await db.SaveChangesAsync(ct);
+        }
+
+        if (!await db.Events.AnyAsync(e => e.Slug == SampleDraftSlug, ct))
+        {
+            db.Events.Add(Event.Create("Student CTF", SampleDraftSlug,
+                new DateTimeOffset(2027, 1, 17, 9, 0, 0, manila), new DateTimeOffset(2027, 1, 17, 18, 0, 0, manila),
+                "UP Diliman, Quezon City", 200, "A capture-the-flag competition for student teams.", now, null));
+            await db.SaveChangesAsync(ct);
+        }
     }
 }
