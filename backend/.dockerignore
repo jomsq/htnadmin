@@ -1,0 +1,20 @@
+# Build output and IDE files
+**/bin/
+**/obj/
+**/TestResults/
+**/*.user
+**/.vs/
+**/.vscode/
+**/.idea/
+**/.DS_Store
+
+# Tests are not part of the API image (CI runs them outside Docker)
+tests/
+
+# Never send secrets to the build context
+**/.env
+**/.env.*
+**/appsettings.*.local.json
+
+Dockerfile
+.dockerignore

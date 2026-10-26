@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.vite/
+**/.DS_Store
+.vscode/
+.idea/
+
+# Never send secrets to the build context
+.env
+.env.*
+
+Dockerfile
+.dockerignore
