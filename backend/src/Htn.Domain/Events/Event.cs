@@ -19,6 +19,9 @@ public sealed class Event
     public const int MaxMembershipYear = 2100;
     public const int MaxEmailPaymentAccounts = 10;
 
+    /// <summary>The check-in desk works from a day before the start until a day after the end (plain timestamps).</summary>
+    public static readonly TimeSpan CheckInMargin = TimeSpan.FromDays(1);
+
     private Event() { }
 
     public Guid Id { get; private set; }
@@ -78,6 +81,10 @@ public sealed class Event
 
     /// <summary>What the UI shows: <see cref="EventStatus.Ended"/> once an OnSale/Closed event's end date has passed.</summary>
     public EventStatus StatusAt(DateTimeOffset now) => DeriveStatus(Status, EndsAt, now);
+
+    /// <summary>Check-in accepts scans: published, and within <see cref="CheckInMargin"/> of the event's dates.</summary>
+    public static bool IsCheckInOpen(DateTimeOffset startsAt, DateTimeOffset endsAt, DateTimeOffset now) =>
+        now >= startsAt - CheckInMargin && now <= endsAt + CheckInMargin;
 
     public static EventStatus DeriveStatus(EventStatus stored, DateTimeOffset endsAt, DateTimeOffset now) =>
         stored is EventStatus.OnSale or EventStatus.Closed && endsAt < now ? EventStatus.Ended : stored;

@@ -93,6 +93,8 @@ internal sealed class AttendeeConfiguration : IEntityTypeConfiguration<Attendee>
         });
         b.HasKey(a => a.Id);
         b.Property(a => a.Id).ValueGeneratedNever();
+        // Target of check_in_scans' composite foreign key (attendee_id, event_id).
+        b.HasAlternateKey(a => new { a.Id, a.EventId }).HasName("ak_attendees_id_event_id");
         b.Property(a => a.ParticipantId).HasMaxLength(13).IsFixedLength().IsRequired();
         b.Property(a => a.FirstName).HasMaxLength(RegistrationForm.NameMaxLength).IsRequired();
         b.Property(a => a.MiddleName).HasMaxLength(RegistrationForm.NameMaxLength);

@@ -29,11 +29,12 @@ internal sealed class CheckInScanConfiguration : IEntityTypeConfiguration<CheckI
         b.HasIndex(s => new { s.EventId, s.At });
         // Recent scans filtered to one station.
         b.HasIndex(s => new { s.EventId, s.Station, s.At });
-        b.HasIndex(s => s.AttendeeId).HasFilter("attendee_id IS NOT NULL");
         b.HasIndex(s => s.StaffUserId);
 
         b.HasOne<Event>().WithMany().HasForeignKey(s => s.EventId).OnDelete(DeleteBehavior.Restrict);
-        b.HasOne<Attendee>().WithMany().HasForeignKey(s => s.AttendeeId).OnDelete(DeleteBehavior.Restrict);
+        // Composite: a scan's attendee must belong to the scan's event.
+        b.HasOne<Attendee>().WithMany().HasForeignKey(s => new { s.AttendeeId, s.EventId }).HasPrincipalKey(a => new { a.Id, a.EventId })
+            .OnDelete(DeleteBehavior.Restrict);
         b.HasOne<AppUser>().WithMany().HasForeignKey(s => s.StaffUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }

@@ -297,6 +297,10 @@ public static class PeopleEndpoints
             var clash = await db.People.AnyAsync(p => p.Email == email && p.Id != id, ct)
                         || await users.FindByEmailAsync(email) is { } other && other.Id != user?.Id;
             if (clash) return Problems.Result(StatusCodes.Status409Conflict, DuplicateEmail, code: "duplicate_email");
+            // The Member rule follows the email: a Member's new address must have a check-in too, unless they came in
+            // through the import or the dev seed (exempt, so typos in a roster can be fixed).
+            if (MemberRule.RequiresCheckIn(person.Level) && !await CameInExemptAsync(db, person.Id, ct) && !await HasCheckedInAsync(db, email, ct))
+                return NoCheckIn();
         }
 
         var before = new { person.FirstName, person.MiddleName, person.LastName, person.Email, person.Position };
@@ -508,6 +512,11 @@ public static class PeopleEndpoints
     /// <summary>An attendee with this email (case-insensitive) has checked in at any event. <paramref name="email"/> is normalized.</summary>
     internal static Task<bool> HasCheckedInAsync(HtnDbContext db, string email, CancellationToken ct) =>
         db.Attendees.AsNoTracking().AnyAsync(a => a.CheckedInAt != null && a.Email.ToLower() == email, ct);
+
+    /// <summary>Created by the roster import or the dev seed (history reason), which the Member rule exempts.</summary>
+    private static Task<bool> CameInExemptAsync(HtnDbContext db, Guid personId, CancellationToken ct) =>
+        db.PersonHistory.AsNoTracking().AnyAsync(h => h.PersonId == personId && h.Kind == PersonHistoryKinds.Created
+            && (h.Reason == MemberRule.ImportedReason || h.Reason == MemberRule.SeededReason), ct);
 
     private static IResult NoCheckIn() =>
         Problems.Result(StatusCodes.Status400BadRequest, MemberRule.Message, code: MemberRule.ErrorCode);

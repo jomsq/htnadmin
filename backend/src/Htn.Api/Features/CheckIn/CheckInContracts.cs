@@ -13,11 +13,16 @@ public sealed record ManualCheckInRequest(Guid? AttendeeId, string? Station);
 public sealed record CheckInAttendeeDto(string Name, string TicketName, string ParticipantId, string? ShirtSize, bool IsMember);
 
 /// <summary>
-/// <see cref="CheckedInAt"/> / <see cref="CheckedInStation"/> are set for Welcome (just now, here) and AlreadyCheckedIn
-/// (the first check-in). <see cref="AmountDue"/> is set for NotPaid. <see cref="Attendee"/> is null for Invalid.
+/// <see cref="Attendee"/>, <see cref="AttendeeId"/> and <see cref="Status"/> are null only for Invalid.
+/// <see cref="CheckedInAt"/> / <see cref="CheckedInStation"/>: the attendee's check-in when they have one (Welcome: just
+/// now, here; AlreadyCheckedIn and Lookup: the first one). <see cref="AmountDue"/>: the registration total while it is
+/// PendingPayment. <see cref="Status"/> is the attendee's own state (CheckedIn, or the registration's status, Paid for a
+/// group partly in), so a Lookup card can show not paid / cancelled / already in. Lookup never changes anything: check
+/// the person in with POST /manual { attendeeId, station }.
 /// </summary>
 public sealed record CheckInResultDto(
-    CheckInResult Result, CheckInAttendeeDto? Attendee, DateTimeOffset? CheckedInAt, string? CheckedInStation, decimal? AmountDue);
+    CheckInResult Result, CheckInAttendeeDto? Attendee, DateTimeOffset? CheckedInAt, string? CheckedInStation, decimal? AmountDue,
+    Guid? AttendeeId, RegistrationStatus? Status);
 
 public sealed record CheckInStatsDto(int CheckedIn, int Paid, int ThisStation, int StationsOnline);
 

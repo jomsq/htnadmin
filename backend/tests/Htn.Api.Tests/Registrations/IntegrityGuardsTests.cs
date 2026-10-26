@@ -40,7 +40,7 @@ public sealed class IntegrityGuardsTests(HtnApiFactory factory) : IClassFixture<
     public async Task Registrations_reject_delete_frozen_columns_and_bad_status_moves()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var (id, _, _) = await RegisterPublicAsync(ev);
 
         await AssertRejectedAsync($"DELETE FROM registrations WHERE id = {id}", "never deleted");
@@ -60,7 +60,7 @@ public sealed class IntegrityGuardsTests(HtnApiFactory factory) : IClassFixture<
         Assert.Equal(HttpStatusCode.OK, (await MarkPaidAsync(board, ev.Id, new { ids = new[] { id }, method = "Cash" })).StatusCode);
         var holder = (await HoldersAsync(factory, id))[0];
         Assert.Equal("Welcome", (await ScanOkAsync(board, ev.Id, holder.Token)).Result());
-        await AssertRejectedAsync($"UPDATE registrations SET status = 'Paid', checked_in_at = NULL WHERE id = {id}", "not allowed");
+        await AssertRejectedAsync($"UPDATE registrations SET status = 'Paid' WHERE id = {id}", "not allowed");
     }
 
     [Fact]
@@ -140,6 +140,51 @@ public sealed class IntegrityGuardsTests(HtnApiFactory factory) : IClassFixture<
         // Voucher codes stay unique per event (now a plain unique index on the upper-case code).
         var dup = await board.PostAsync($"/api/events/{ev.Id}/vouchers", Voucher("arrays1"));
         Assert.Equal(HttpStatusCode.Conflict, dup.StatusCode);
+    }
+
+    [Fact]
+    public async Task Check_in_records_are_write_once_and_scans_must_match_the_attendees_event()
+    {
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+        var ev = await LiveAsync(board);
+        var other = await LiveAsync(board);
+        var guest = await PaidAsync(factory, board, ev);
+        var outsider = await PaidAsync(factory, board, other);
+
+        // Before check-in the email and ticket version can still move forward (NULL -> value is the API's own path).
+        Assert.Equal(1, await SqlAsync($"UPDATE attendees SET ticket_version = ticket_version + 1 WHERE id = {guest.AttendeeId}"));
+        await AssertRejectedAsync($"UPDATE attendees SET ticket_version = 1 WHERE id = {guest.AttendeeId}", "never decreases");
+        var fresh = (await HoldersAsync(factory, guest.RegistrationId))[0];
+        Assert.Equal("Welcome", (await ScanOkAsync(board, ev.Id, fresh.Token)).Result());
+
+        await AssertRejectedAsync($"UPDATE attendees SET checked_in_at = NULL, checked_in_station = NULL, checked_in_by_id = NULL WHERE id = {guest.AttendeeId}",
+            "check-in cannot be changed");
+        await AssertRejectedAsync($"UPDATE attendees SET checked_in_station = 'Elsewhere' WHERE id = {guest.AttendeeId}", "check-in cannot be changed");
+        await AssertRejectedAsync($"UPDATE attendees SET checked_in_at = checked_in_at - interval '1 day' WHERE id = {guest.AttendeeId}", "check-in cannot be changed");
+        await AssertRejectedAsync($"UPDATE attendees SET email = 'someone.else@example.ph' WHERE id = {guest.AttendeeId}", "email is frozen");
+        await AssertRejectedAsync($"UPDATE registrations SET checked_in_at = now() WHERE id = {guest.RegistrationId}", "checked_in_at cannot be changed");
+        Assert.Equal(1, await SqlAsync($"UPDATE attendees SET shirt_size = 'XL' WHERE id = {guest.AttendeeId}"));
+
+        // A scan row naming another event's attendee is refused by the composite foreign key.
+        var staff = await factory.DbAsync(db => db.Users.Select(u => u.Id).FirstAsync());
+        await AssertRejectedAsync($"""
+            INSERT INTO check_in_scans (id, event_id, attendee_id, result, method, station, staff_user_id, at)
+            VALUES (gen_random_uuid(), {ev.Id}, {outsider.AttendeeId}, 'Lookup', 'Manual', 'Desk', {staff}, now())
+            """, "fk_check_in_scans_attendees_attendee_id_event_id");
+    }
+
+    [Fact]
+    public async Task Proof_that_cannot_be_parsed_for_metadata_is_rejected()
+    {
+        var (_, regId, token) = await ProofRegistrationAsync();
+        // A valid PNG header and size, but the chunks run off the end: the stripper can't vouch for it.
+        byte[] truncated = [.. Png[..33], 0, 0, 0, 200, .. "tEXt"u8, .. "GPS"u8];
+        var res = await UploadAsync(factory.NewClient(), token, truncated);
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        var problem = await ApiClient.JsonAsync(res);
+        Assert.Equal("unsupported_type", problem.Code());
+        Assert.Equal("Upload a screenshot (PNG or JPG) instead.", problem.GetProperty("errors").GetProperty("file")[0].GetString());
+        Assert.Equal(0, await factory.DbAsync(db => db.PaymentProofs.CountAsync(p => p.RegistrationId == regId)));
     }
 
     // ---------- Overdue registrations release their seat ----------
@@ -389,7 +434,7 @@ public sealed class IntegrityGuardsTests(HtnApiFactory factory) : IClassFixture<
     public async Task Resend_ticket_for_a_group_partly_in_goes_only_to_members_not_checked_in()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board, ticket: Ticket("Trio", 3000m, 10, groupSize: 3));
+        var ev = await LiveAsync(board, ticket: Ticket("Trio", 3000m, 10, groupSize: 3));
         var team = await RegisterAsync(factory, board, ev.Id, ev.TicketId, people: [Person(), Member(), Member()]);
         await ScanOkAsync(board, ev.Id, team[1].Token);
         await factory.DrainOutboxAsync();

@@ -31,9 +31,9 @@ internal static class RegistrationTestData
     };
 
     /// <summary>An on-sale event with one public ticket (and optional extra settings applied before publishing).</summary>
-    public static async Task<OnSaleEvent> PublishedAsync(ApiClient board, int capacity = 400, object? ticket = null)
+    public static async Task<OnSaleEvent> PublishedAsync(ApiClient board, int capacity = 400, object? ticket = null, DateTimeOffset? startsAt = null)
     {
-        var ev = await CreateAsync(board, NewEvent(capacity: capacity));
+        var ev = await CreateAsync(board, NewEvent(capacity: capacity, startsAt: startsAt));
         var id = ev.Id();
         var t = await AddTicketAsync(board, id, ticket ?? Ticket());
         var res = await board.PostAsync($"/api/events/{id}/publish");

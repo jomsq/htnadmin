@@ -27,7 +27,7 @@ public sealed class MemberRuleTests(HtnApiFactory factory) : IClassFixture<HtnAp
         Assert.False(await factory.DbAsync(db => db.People.AnyAsync(p => p.Email == email)));
 
         // Registered (and paid) but never checked in is not enough.
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         await PaidAsync(factory, board, ev, email: email);
         Assert.Equal("no_check_in", (await ApiClient.JsonAsync(await board.PostAsync("/api/people", NewPerson("Member", email)))).GetProperty("code").GetString());
 
@@ -40,7 +40,7 @@ public sealed class MemberRuleTests(HtnApiFactory factory) : IClassFixture<HtnAp
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
         var email = HtnApiFactory.UniqueEmail("walkin");
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var guest = await PaidAsync(factory, board, ev, email: email.ToUpperInvariant());
         Assert.Equal("Welcome", (await ScanOkAsync(board, ev.Id, guest.Token)).Result());
 
@@ -68,6 +68,43 @@ public sealed class MemberRuleTests(HtnApiFactory factory) : IClassFixture<HtnAp
         Assert.Equal("Member", (await ApiClient.JsonAsync(ok)).GetProperty("level").GetString());
     }
 
+    private static object Update(string email) => new { firstName = "Paolo", lastName = "Garcia", email };
+
+    [Fact]
+    public async Task Changing_a_members_email_needs_a_check_in_for_the_new_address()
+    {
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+        var email = HtnApiFactory.UniqueEmail("member");
+        await factory.SeedCheckInAsync(email);
+        var created = await ApiClient.JsonAsync(await board.PostAsync("/api/people", NewPerson("Member", email)));
+        var id = created.GetProperty("id").GetGuid();
+
+        var unchecked_ = HtnApiFactory.UniqueEmail("typo");
+        var refused = await board.PutAsync($"/api/people/{id}", Update(unchecked_));
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        Assert.Equal("no_check_in", (await ApiClient.JsonAsync(refused)).GetProperty("code").GetString());
+        Assert.Equal(email, await factory.DbAsync(db => db.People.Where(p => p.Id == id).Select(p => p.Email).SingleAsync()));
+
+        var checkedIn = HtnApiFactory.UniqueEmail("fixed");
+        await factory.SeedCheckInAsync(checkedIn.ToUpperInvariant());
+        Assert.Equal(HttpStatusCode.OK, (await board.PutAsync($"/api/people/{id}", Update(checkedIn))).StatusCode);
+
+        // Other levels are not affected.
+        var apprentice = await factory.CreateUserAsync(PersonLevel.Apprentice, withPassword: false);
+        Assert.Equal(HttpStatusCode.OK, (await board.PutAsync($"/api/people/{apprentice.PersonId}", Update(HtnApiFactory.UniqueEmail("appr")))).StatusCode);
+    }
+
+    [Fact]
+    public async Task Imported_members_can_have_their_email_fixed_without_a_check_in()
+    {
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+        var email = HtnApiFactory.UniqueEmail("imp");
+        var csv = Encoding.UTF8.GetBytes($"first_name,last_name,email,level\r\nMara,Cruz,{email},Member\r\n");
+        Assert.Equal(HttpStatusCode.OK, (await board.PostFileAsync("/api/people/import?dryRun=false", csv, "roster.csv", "text/csv")).StatusCode);
+        var id = await factory.DbAsync(db => db.People.Where(p => p.Email == email).Select(p => p.Id).SingleAsync());
+        Assert.Equal(HttpStatusCode.OK, (await board.PutAsync($"/api/people/{id}", Update(HtnApiFactory.UniqueEmail("fixedtypo")))).StatusCode);
+    }
+
     [Fact]
     public async Task Import_is_exempt_and_history_says_imported()
     {
@@ -92,12 +129,12 @@ public sealed class MemberRuleTests(HtnApiFactory factory) : IClassFixture<HtnAp
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
         var apprentice = await factory.CreateUserAsync(PersonLevel.Apprentice);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var guest = await PaidAsync(factory, board, ev, email: apprentice.Email.ToUpperInvariant());
         await ScanOkAsync(board, ev.Id, guest.Token);
         var seededEvent = await factory.SeedCheckInAsync(apprentice.Email, "Earlier meetup");
         // Paid at a third event but never checked in: not attendance.
-        var third = await PublishedAsync(board);
+        var third = await LiveAsync(board);
         await PaidAsync(factory, board, third, email: apprentice.Email);
 
         var detail = await ApiClient.JsonAsync(await board.GetAsync($"/api/people/{apprentice.PersonId}"));

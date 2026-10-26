@@ -189,7 +189,9 @@ public static class PublicRegistrationEndpoints
             return Problems.Field("file", "The image is too large. Upload a screenshot instead.", "image_too_large");
 
         // Location, device and comments in EXIF / PNG text chunks are personal data nobody asked for: dropped before storing.
-        var bytes = FileSignatures.StripMetadata(file.Bytes);
+        // Fails closed: a file the stripper can't walk all the way through is refused, not stored with unseen metadata.
+        if (FileSignatures.StripMetadata(file.Bytes) is not { } bytes)
+            return Problems.Field("file", "Upload a screenshot (PNG or JPG) instead.", "unsupported_type");
 
         // Count check and insert under a row lock on the registration, so parallel uploads can't pass the cap together
         // (and a mark-paid racing the upload is seen).

@@ -156,16 +156,27 @@ public static class FileSignatures
     }
 
     /// <summary>
-    /// Removes metadata that can carry personal data (GPS position, device, names, comments) without re-encoding:
-    /// JPEG APP1–APP15 and COM segments (APP0/JFIF stays), PNG tEXt, iTXt, zTXt and eXIf chunks. Anything that doesn't
-    /// parse cleanly is returned unchanged (the caller has already checked it is a PNG/JPEG of an acceptable size).
+    /// Removes metadata that can carry personal data (GPS position, device, names, comments, thumbnails) without
+    /// re-encoding. JPEG keeps only APP0 (JFIF, without a thumbnail), APP2 (ICC colour profile) and APP14 (Adobe colour
+    /// transform), and drops APP1 (EXIF/XMP), APP13 (Photoshop/IPTC), every other APPn and COM. PNG drops tEXt, iTXt,
+    /// zTXt and eXIf chunks. Fails closed: returns null when the file can't be parsed all the way, so the caller rejects it
+    /// instead of storing metadata it couldn't see.
     /// </summary>
-    public static byte[] StripMetadata(byte[] data)
+    public static byte[]? StripMetadata(byte[] data)
     {
-        if (IsPng(data)) return StripPng(data) ?? data;
-        if (IsJpeg(data)) return StripJpeg(data) ?? data;
-        return data;
+        if (IsPng(data)) return StripPng(data);
+        if (IsJpeg(data)) return StripJpeg(data);
+        return null;
     }
+
+    private static bool KeepJpegSegment(byte marker, ReadOnlySpan<byte> payload) => marker switch
+    {
+        // JFIF header: kept unless it carries a thumbnail (Xthumb and Ythumb are bytes 12 and 13 of the payload).
+        0xE0 => payload.Length >= 14 && payload[..5].SequenceEqual("JFIF\0"u8) && (payload[12] == 0 || payload[13] == 0),
+        0xE2 or 0xEE => true,
+        >= 0xE1 and <= 0xEF or 0xFE => false,
+        _ => true,
+    };
 
     private static byte[]? StripPng(byte[] data)
     {
@@ -216,8 +227,7 @@ public static class FileSignatures
                 output.Write(data, start, data.Length - start);
                 return output.ToArray();
             }
-            var isMetadata = marker is >= 0xE1 and <= 0xEF || marker == 0xFE;
-            if (!isMetadata) output.Write(data, start, i + length - start);
+            if (KeepJpegSegment(marker, data.AsSpan(i + 2, length - 2))) output.Write(data, start, i + length - start);
             i += length;
         }
         return null;

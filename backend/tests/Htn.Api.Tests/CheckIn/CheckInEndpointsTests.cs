@@ -34,7 +34,7 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     public async Task Anonymous_is_401_on_every_route()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var anon = factory.NewClient();
         foreach (var (method, url, body) in Routes(ev.Id))
             Assert.Equal(HttpStatusCode.Unauthorized, (await anon.SendAsync(method, url, body, csrf: method != HttpMethod.Get)).StatusCode);
@@ -48,7 +48,7 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     public async Task Every_staff_role_can_use_the_desk(PersonLevel level)
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var guest = await PaidAsync(factory, board, ev);
         var staff = await factory.SignedInAsync(level);
 
@@ -69,10 +69,39 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     }
 
     [Fact]
+    public async Task Check_in_is_closed_more_than_a_day_before_or_after_the_event()
+    {
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+        var early = await PublishedAsync(board, startsAt: DateTimeOffset.UtcNow.AddDays(2));
+        var guest = await PaidAsync(factory, board, early);
+        async Task AssertClosedAsync(Guid eventId)
+        {
+            foreach (var (method, url, body) in Routes(eventId))
+            {
+                var res = await board.SendAsync(method, url, method == HttpMethod.Post && url.EndsWith("/scan", StringComparison.Ordinal)
+                    ? Scan(guest.Token) : body, csrf: method != HttpMethod.Get);
+                Assert.Equal(HttpStatusCode.Conflict, res.StatusCode);
+                Assert.Equal("check_in_closed", (await ApiClient.JsonAsync(res)).Code());
+            }
+        }
+        await AssertClosedAsync(early.Id);
+        Assert.Empty(await ScansAsync(early.Id));
+        Assert.Null(await factory.DbAsync(db => db.Attendees.Where(a => a.Id == guest.AttendeeId).Select(a => a.CheckedInAt).SingleAsync()));
+
+        // 23 hours before the start it opens; more than a day after the end it closes again.
+        await factory.DbAsync(db => db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE events SET starts_at = now() + interval '23 hours', ends_at = now() + interval '30 hours' WHERE id = {early.Id}"));
+        Assert.Equal("Welcome", (await ScanOkAsync(board, early.Id, guest.Token)).Result());
+        await factory.DbAsync(db => db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE events SET starts_at = now() - interval '3 days', ends_at = now() - interval '25 hours' WHERE id = {early.Id}"));
+        await AssertClosedAsync(early.Id);
+    }
+
+    [Fact]
     public async Task Closed_event_still_checks_in()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var guest = await PaidAsync(factory, board, ev);
         Assert.Equal(HttpStatusCode.OK, (await board.PostAsync($"/api/events/{ev.Id}/close")).StatusCode);
         Assert.Equal("Welcome", (await ScanOkAsync(board, ev.Id, guest.Token)).Result());
@@ -82,7 +111,7 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     public async Task Invalid_requests_are_400()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var noStation = await ApiClient.JsonAsync(await board.PostAsync(ScanUrl(ev.Id), new { payload = "x", station = "   " }));
         Assert.True(noStation.HasError("station"));
         var longStation = await board.PostAsync(ScanUrl(ev.Id), Scan("x", new string('a', 41)));
@@ -101,7 +130,7 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     public async Task Welcome_checks_in_the_attendee_and_registration_with_audit_and_log()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var guest = await PaidAsync(factory, board, ev, first: "Maria", last: "Santos");
         var goon = await factory.CreateUserAsync(PersonLevel.Goon);
         var staff = factory.NewClient();
@@ -150,7 +179,7 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     public async Task Second_scan_is_already_checked_in_with_first_time_and_station()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var guest = await PaidAsync(factory, board, ev);
         var first = await ScanOkAsync(board, ev.Id, guest.Token, "Desk 1");
         var again = await ScanOkAsync(board, ev.Id, guest.Token, "Desk 2");
@@ -170,7 +199,7 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     public async Task Unpaid_ticket_is_not_paid_with_the_amount_due()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var guest = (await RegisterAsync(factory, board, ev.Id, ev.TicketId, paid: false))[0];
 
         var scan = await ScanOkAsync(board, ev.Id, guest.Token);
@@ -179,8 +208,12 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
         Assert.Equal(JsonValueKind.Null, scan.GetProperty("checkedInAt").ValueKind);
         Assert.Equal(guest.ParticipantId, scan.GetProperty("attendee").GetProperty("participantId").GetString());
 
+        // A typed ID only looks up: the card says not paid, nothing changes.
         var byId = await ScanOkAsync(board, ev.Id, guest.ParticipantId);
-        Assert.Equal("NotPaid", byId.Result());
+        Assert.Equal("Lookup", byId.Result());
+        Assert.Equal("PendingPayment", byId.GetProperty("status").GetString());
+        Assert.Equal(1500m, byId.GetProperty("amountDue").GetDecimal());
+        Assert.Equal(guest.AttendeeId, byId.GetProperty("attendeeId").GetGuid());
         Assert.Null(await factory.DbAsync(db => db.Attendees.Where(a => a.Id == guest.AttendeeId).Select(a => a.CheckedInAt).SingleAsync()));
         Assert.Equal(RegistrationStatus.PendingPayment,
             await factory.DbAsync(db => db.Registrations.Where(r => r.Id == guest.RegistrationId).Select(r => r.Status).SingleAsync()));
@@ -190,7 +223,7 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     public async Task Cancelled_registration_is_cancelled_by_qr_and_by_participant_id()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var guest = await PaidAsync(factory, board, ev);
         Assert.Equal(HttpStatusCode.OK,
             (await board.PostAsync($"/api/events/{ev.Id}/registrations/{guest.RegistrationId}/cancel", new { reason = "Asked for a refund" })).StatusCode);
@@ -198,16 +231,21 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
         var scan = await ScanOkAsync(board, ev.Id, guest.Token);
         Assert.Equal("Cancelled", scan.Result());
         Assert.Equal(guest.ParticipantId, scan.GetProperty("attendee").GetProperty("participantId").GetString());
-        Assert.Equal("Cancelled", (await ScanOkAsync(board, ev.Id, guest.ParticipantId)).Result());
-        Assert.All(await ScansAsync(ev.Id), s => Assert.Equal(CheckInResult.Cancelled, s.Result));
+        var lookup = await ScanOkAsync(board, ev.Id, guest.ParticipantId);
+        Assert.Equal("Lookup", lookup.Result());
+        Assert.Equal("Cancelled", lookup.GetProperty("status").GetString());
+        Assert.Equal([CheckInResult.Cancelled, CheckInResult.Lookup], (await ScansAsync(ev.Id)).Select(x => x.Result));
+        // Manual check-in of a cancelled attendee is refused the same way as the QR.
+        Assert.Equal("Cancelled", (await ApiClient.JsonAsync(await board.PostAsync($"/api/events/{ev.Id}/check-in/manual",
+            new { attendeeId = guest.AttendeeId, station = "Desk 1" }))).Result());
     }
 
     [Fact]
     public async Task Tampered_other_event_stale_and_unknown_codes_are_invalid_and_logged()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
-        var other = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
+        var other = await LiveAsync(board);
         var guest = await PaidAsync(factory, board, ev);
         var outsider = await PaidAsync(factory, board, other);
         var tokens = factory.Services.GetRequiredService<ITicketToken>();
@@ -254,10 +292,10 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     [InlineData("lower")]
     [InlineData("nodash")]
     [InlineData("  {0}  ")]
-    public async Task Typed_participant_id_is_a_manual_lookup_in_this_event(string shape)
+    public async Task Typed_participant_id_only_looks_up_and_never_checks_in(string shape)
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var guest = await PaidAsync(factory, board, ev);
         var payload = shape switch
         {
@@ -266,18 +304,37 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
             _ => string.Format(System.Globalization.CultureInfo.InvariantCulture, shape, guest.ParticipantId),
         };
         var scan = await ScanOkAsync(board, ev.Id, payload);
-        Assert.Equal("Welcome", scan.Result());
+        Assert.Equal("Lookup", scan.Result());
+        Assert.Equal(guest.AttendeeId, scan.GetProperty("attendeeId").GetGuid());
+        Assert.Equal("Paid", scan.GetProperty("status").GetString());
+        Assert.Equal(guest.ParticipantId, scan.GetProperty("attendee").GetProperty("participantId").GetString());
+        Assert.Equal(JsonValueKind.Null, scan.GetProperty("checkedInAt").ValueKind);
         var log = Assert.Single(await ScansAsync(ev.Id));
         Assert.Equal(CheckInMethod.Manual, log.Method);
+        Assert.Equal(CheckInResult.Lookup, log.Result);
         Assert.Equal(guest.AttendeeId, log.AttendeeId);
+
+        // Nothing changed: checked_in_at is still NULL and the registration is still Paid.
+        Assert.Null(await factory.DbAsync(db => db.Attendees.Where(a => a.Id == guest.AttendeeId).Select(a => a.CheckedInAt).SingleAsync()));
+        Assert.Equal(RegistrationStatus.Paid,
+            await factory.DbAsync(db => db.Registrations.Where(r => r.Id == guest.RegistrationId).Select(r => r.Status).SingleAsync()));
+        Assert.False(await factory.DbAsync(db => db.AuditEntries.AnyAsync(a => a.Action == "attendee.check_in" && a.EntityId == guest.AttendeeId.ToString())));
+
+        // The desk then checks them in explicitly; a later lookup shows when and where.
+        Assert.Equal("Welcome", (await ApiClient.JsonAsync(await board.PostAsync($"/api/events/{ev.Id}/check-in/manual",
+            new { attendeeId = guest.AttendeeId, station = "Desk 4" }))).Result());
+        var again = await ScanOkAsync(board, ev.Id, payload);
+        Assert.Equal("Lookup", again.Result());
+        Assert.Equal("CheckedIn", again.GetProperty("status").GetString());
+        Assert.Equal("Desk 4", again.GetProperty("checkedInStation").GetString());
     }
 
     [Fact]
     public async Task Manual_check_in_by_attendee_id_uses_the_same_rules()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
-        var other = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
+        var other = await LiveAsync(board);
         var guest = await PaidAsync(factory, board, ev);
         var outsider = await PaidAsync(factory, board, other);
         var apprentice = await factory.SignedInAsync(PersonLevel.Apprentice);
@@ -301,7 +358,7 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     public async Task Group_registration_is_checked_in_once_anyone_is_in_and_each_attendee_keeps_their_flag()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board, ticket: Ticket("Team of 3", 3000m, 10, groupSize: 3));
+        var ev = await LiveAsync(board, ticket: Ticket("Team of 3", 3000m, 10, groupSize: 3));
         var team = await RegisterAsync(factory, board, ev.Id, ev.TicketId, people:
             [Person(first: "Bea", last: "Garcia"), Member(first: "Dan", last: "Lim"), Member(first: "Eli", last: "Ramos")]);
 
@@ -322,7 +379,7 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     public async Task Is_member_matches_an_active_person_by_email_case_insensitively()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var apprentice = await factory.CreateUserAsync(PersonLevel.Apprentice);
         var guest = await PaidAsync(factory, board, ev, email: apprentice.Email.ToUpperInvariant());
         var scan = await ScanOkAsync(board, ev.Id, guest.Token);
@@ -335,11 +392,11 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     public async Task Simultaneous_scans_of_one_ticket_give_exactly_one_welcome()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var guest = await PaidAsync(factory, board, ev);
         var desks = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ => factory.SignedInAsync(PersonLevel.Goon)));
 
-        var results = await Task.WhenAll(desks.Select((d, i) => ScanOkAsync(d, ev.Id, i % 2 == 0 ? guest.Token : guest.ParticipantId, $"Desk {i}")));
+        var results = await Task.WhenAll(desks.Select((d, i) => ScanOkAsync(d, ev.Id, guest.Token, $"Desk {i}")));
         Assert.Single(results, r => r.Result() == "Welcome");
         Assert.Equal(5, results.Count(r => r.Result() == "AlreadyCheckedIn"));
         var logs = await ScansAsync(ev.Id);
@@ -352,7 +409,7 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     public async Task Simultaneous_scans_of_two_group_members_both_welcome()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board, ticket: Ticket("Pair", 2000m, 10, groupSize: 2));
+        var ev = await LiveAsync(board, ticket: Ticket("Pair", 2000m, 10, groupSize: 2));
         var pair = await RegisterAsync(factory, board, ev.Id, ev.TicketId, people: [Person(), Member()]);
         var a = await factory.SignedInAsync(PersonLevel.Goon);
         var b = await factory.SignedInAsync(PersonLevel.Goon);
@@ -369,7 +426,7 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     public async Task Scan_log_is_append_only_in_the_database(string sql)
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         await ScanOkAsync(board, ev.Id, "not a ticket");
         var ex = await Assert.ThrowsAnyAsync<Exception>(() => factory.DbAsync(db => db.Database.ExecuteSqlRawAsync(sql)));
         Assert.Contains("append-only", ex.Message, StringComparison.Ordinal);
@@ -389,7 +446,7 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     public async Task Stats_count_checked_in_paid_this_station_and_stations_online()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var a = await PaidAsync(factory, board, ev);
         var b = await PaidAsync(factory, board, ev);
         await PaidAsync(factory, board, ev);
@@ -415,7 +472,7 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     public async Task Recent_is_newest_first_limited_to_20_and_filters_by_station()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var guest = await PaidAsync(factory, board, ev, first: "Ana", last: "Reyes");
         for (var i = 0; i < 21; i++) await ScanOkAsync(board, ev.Id, "junk " + i, "Desk 9");
         await ScanOkAsync(board, ev.Id, guest.Token, "Desk 1");
@@ -439,8 +496,8 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     public async Task Search_finds_by_name_or_participant_id_with_limited_fields_only()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
-        var other = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
+        var other = await LiveAsync(board);
         var tag = LetterTag("Zq");
         var maria = await PaidAsync(factory, board, ev, first: "Maria", last: tag);
         var juan = (await RegisterAsync(factory, board, ev.Id, ev.TicketId, paid: false, people: [Person(first: "Juan", last: tag)]))[0];
@@ -464,12 +521,22 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
         var byId = await ApiClient.JsonAsync(await goon.GetAsync(
             $"/api/events/{ev.Id}/check-in/search?q={juan.ParticipantId.Replace("-", "", StringComparison.Ordinal).ToLowerInvariant()}"));
         Assert.Equal(juan.AttendeeId, Assert.Single(byId.EnumerateArray()).GetProperty("attendeeId").GetGuid());
-        var partial = await ApiClient.JsonAsync(await goon.GetAsync($"/api/events/{ev.Id}/check-in/search?q={juan.ParticipantId[4..]}"));
-        Assert.Contains(partial.EnumerateArray(), h => h.GetProperty("attendeeId").GetGuid() == juan.AttendeeId);
+        // IDs match by a prefix of at least 6 characters (dashes ignored), never as a substring.
+        async Task<List<Guid>> HitsAsync(string q) =>
+            (await ApiClient.JsonAsync(await goon.GetAsync($"/api/events/{ev.Id}/check-in/search?q={Uri.EscapeDataString(q)}")))
+            .EnumerateArray().Select(h => h.GetProperty("attendeeId").GetGuid()).ToList();
+        var compact = juan.ParticipantId.Replace("-", "", StringComparison.Ordinal);
+        Assert.Contains(juan.AttendeeId, await HitsAsync(compact[..6].ToLowerInvariant()));      // "htn7k3"
+        Assert.Contains(juan.AttendeeId, await HitsAsync(juan.ParticipantId[..9]));               // "HTN-7K3Q-"
+        Assert.Empty(await HitsAsync(compact[..5]));                                              // too short
+        Assert.Empty(await HitsAsync(juan.ParticipantId[4..]));                                   // substring
+        Assert.Empty(await HitsAsync(juan.ParticipantId[9..]));                                   // suffix
 
-        // Wildcards are escaped; too-short queries and email searches find nothing.
-        Assert.Empty((await ApiClient.JsonAsync(await goon.GetAsync($"/api/events/{ev.Id}/check-in/search?q=%25%25"))).EnumerateArray());
-        Assert.Empty((await ApiClient.JsonAsync(await goon.GetAsync($"/api/events/{ev.Id}/check-in/search?q=__"))).EnumerateArray());
+        // Names need 3 characters; wildcards are escaped; email searches find nothing.
+        Assert.Empty(await HitsAsync("%%%"));
+        Assert.Empty(await HitsAsync("___"));
+        Assert.Empty(await HitsAsync("Ma"));
+        Assert.Equal(2, (await HitsAsync(tag[..5])).Count);
         Assert.Empty((await ApiClient.JsonAsync(await goon.GetAsync($"/api/events/{ev.Id}/check-in/search?q=M"))).EnumerateArray());
         Assert.Empty((await ApiClient.JsonAsync(await goon.GetAsync($"/api/events/{ev.Id}/check-in/search?q={Uri.EscapeDataString(maria.Email)}"))).EnumerateArray());
     }
@@ -479,7 +546,7 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
         // Groups over 20 are hidden tickets (manual registration only).
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var big = (await AddTicketAsync(board, ev.Id, Ticket("Big team", 1000m, 10, groupSize: 25, visibility: "Hidden"))).Id();
         var tag = LetterTag("Cap");
         await RegisterAsync(factory, board, ev.Id, big, paid: false,

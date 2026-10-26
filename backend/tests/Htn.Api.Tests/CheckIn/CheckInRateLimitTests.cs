@@ -12,6 +12,7 @@ public sealed class CheckInRateLimitApiFactory : HtnApiFactory
     {
         ["RateLimiting:CheckInPermitLimit"] = "3",
         ["RateLimiting:CheckInSearchPermitLimit"] = "2",
+        ["RateLimiting:CheckInReadPermitLimit"] = "3",
         ["RateLimiting:CheckInWindowSeconds"] = "600",
     };
 }
@@ -22,7 +23,7 @@ public sealed class CheckInRateLimitTests(CheckInRateLimitApiFactory factory) : 
     public async Task Scans_are_limited_per_user_and_share_a_bucket_with_manual()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var staff = await factory.SignedInAsync(PersonLevel.Goon);
 
         Assert.Equal(HttpStatusCode.OK, (await staff.PostAsync(ScanUrl(ev.Id), Scan("junk 1"))).StatusCode);
@@ -37,15 +38,28 @@ public sealed class CheckInRateLimitTests(CheckInRateLimitApiFactory factory) : 
         // Another signed-in user on the same IP has their own bucket; reads aren't limited.
         var other = await factory.SignedInAsync(PersonLevel.Apprentice);
         Assert.Equal(HttpStatusCode.OK, (await other.PostAsync(ScanUrl(ev.Id), Scan("junk 4"))).StatusCode);
+    }
+
+    [Fact]
+    public async Task Stats_and_recent_share_a_per_user_read_limit()
+    {
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+        var ev = await LiveAsync(board);
+        var staff = await factory.SignedInAsync(PersonLevel.Goon);
         Assert.Equal(HttpStatusCode.OK, (await staff.GetAsync($"/api/events/{ev.Id}/check-in/stats")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await staff.GetAsync($"/api/events/{ev.Id}/check-in/recent")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await staff.GetAsync($"/api/events/{ev.Id}/check-in/stats")).StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await staff.GetAsync($"/api/events/{ev.Id}/check-in/recent")).StatusCode);
+        // Scans and other users are unaffected.
+        Assert.Equal(HttpStatusCode.OK, (await staff.PostAsync(ScanUrl(ev.Id), Scan("junk"))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await (await factory.SignedInAsync(PersonLevel.Apprentice)).GetAsync($"/api/events/{ev.Id}/check-in/stats")).StatusCode);
     }
 
     [Fact]
     public async Task Search_has_its_own_per_user_limit()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board);
+        var ev = await LiveAsync(board);
         var staff = await factory.SignedInAsync(PersonLevel.Goon);
         Assert.Equal(HttpStatusCode.OK, (await staff.GetAsync($"/api/events/{ev.Id}/check-in/search?q=maria")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await staff.GetAsync($"/api/events/{ev.Id}/check-in/search?q=juan")).StatusCode);

@@ -44,10 +44,24 @@ public static partial class RegistrationForm
     public static bool IsValidName(string? value) => value is null || (NameRegex().IsMatch(value.Trim()) && !HasLinkOrMarkup(value));
 
     /// <summary>A trimmed occupation or company that passes the character rules (length is checked separately).</summary>
-    public static bool IsValidOrgText(string? value) => value is null || (OrgTextRegex().IsMatch(value.Trim()) && !HasLinkOrMarkup(value));
+    public static bool IsValidOrgText(string? value) =>
+        value is null || (OrgTextRegex().IsMatch(value.Trim()) && !HasLinkOrMarkup(value) && !SlashTouchesDottedToken(value));
 
     private static bool HasLinkOrMarkup(string value) =>
-        value.Contains("://", StringComparison.Ordinal) || value.IndexOfAny(['@', '<', '>']) >= 0 || value.Any(char.IsControl);
+        value.Contains("://", StringComparison.Ordinal) || value.IndexOfAny(['@', '<', '>']) >= 0 || value.Any(char.IsControl)
+        || DotJoinsWord().IsMatch(value);
+
+    /// <summary>
+    /// A '.' directly followed by a letter or digit ("gcash-ph.com", "Ma.Niña"): domain-like. An abbreviation is followed
+    /// by a space, comma, hyphen or the end ("Ma. Niña", "Santos, Jr.", "St. Luke's").
+    /// </summary>
+    [GeneratedRegex(@"\.[\p{L}\p{N}]", RegexOptions.CultureInvariant)]
+    private static partial Regex DotJoinsWord();
+
+    /// <summary>Org text: a '/' touching a dotted token ("Inc./Ltd", "x./y") reads like a path or link.</summary>
+    private static bool SlashTouchesDottedToken(string value) =>
+        value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Any(token => token.Contains('/') && token.Split('/').Any(part => part.Contains('.')));
 
     [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+\z", RegexOptions.CultureInvariant)]
     private static partial Regex EmailRegex();

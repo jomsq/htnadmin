@@ -41,7 +41,13 @@ public sealed class RateLimitSettings
     public int CheckInPermitLimit { get; set; } = 120;
 
     /// <summary>Check-in desk searches per signed-in user, per window.</summary>
-    public int CheckInSearchPermitLimit { get; set; } = 120;
+    public int CheckInSearchPermitLimit { get; set; } = 30;
+
+    /// <summary>
+    /// Check-in stats and recent-scan reads per signed-in user, per window (one bucket for both). A desk polling both
+    /// every 5 s uses 24 a minute.
+    /// </summary>
+    public int CheckInReadPermitLimit { get; set; } = 60;
 
     public int CheckInWindowSeconds { get; set; } = 60;
 

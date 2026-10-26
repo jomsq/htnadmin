@@ -61,12 +61,27 @@ public sealed class FileMetadataTests
     }
 
     [Fact]
-    public void Malformed_files_are_returned_unchanged()
+    public void Files_that_cannot_be_walked_fail_closed()
     {
         byte[] truncatedJpeg = [0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x40, 1, 2];
-        Assert.Equal(truncatedJpeg, FileSignatures.StripMetadata(truncatedJpeg));
-        byte[] other = [.. "GIF89a"u8];
-        Assert.Equal(other, FileSignatures.StripMetadata(other));
+        Assert.Null(FileSignatures.StripMetadata(truncatedJpeg));
+        byte[] jpegWithoutScan = [0xFF, 0xD8, .. Sof0];
+        Assert.Null(FileSignatures.StripMetadata(jpegWithoutScan));
+        Assert.Null(FileSignatures.StripMetadata([.. "GIF89a"u8]));
+        byte[] pngWithoutEnd = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, .. "IHDR"u8, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 1, 2, 3, 4];
+        Assert.Null(FileSignatures.StripMetadata(pngWithoutEnd));
+    }
+
+    [Fact]
+    public void Jpeg_keeps_icc_and_adobe_segments_and_drops_photoshop_and_jfif_thumbnails()
+    {
+        var icc = Segment(0xE2, [.. "ICC_PROFILE\0"u8, 1, 1, 9, 9]);
+        var adobe = Segment(0xEE, [.. "Adobe"u8, 0, 100, 0, 0, 0, 0, 1]);
+        var photoshop = Segment(0xED, [.. "Photoshop 3.0\0IPTC by Juan"u8]);
+        var app5 = Segment(0xE5, [.. "vendor Juan"u8]);
+        var jfifWithThumb = Segment(0xE0, [.. "JFIF\0"u8, 1, 1, 0, 0, 1, 0, 1, 2, 2, .. new byte[12]]);
+        var output = FileSignatures.StripMetadata(Jpeg(jfifWithThumb, icc, photoshop, app5, adobe, Sof0));
+        Assert.Equal(Jpeg(icc, adobe, Sof0), output);
     }
 
     [Theory]
@@ -80,6 +95,11 @@ public sealed class FileMetadataTests
     [InlineData("Juan2", false)]
     [InlineData("-Juan", false)]
     [InlineData("Ju\u0000an", false)]
+    [InlineData("Santos, Jr.", true)]
+    [InlineData("St. Luke's", true)]
+    [InlineData("Ma.Niña", false)]
+    [InlineData("gcash-ph.com", false)]
+    [InlineData("Juan.", true)]
     public void Name_rules(string value, bool ok) => Assert.Equal(ok, RegistrationForm.IsValidName(value));
 
     [Theory]
@@ -88,6 +108,12 @@ public sealed class FileMetadataTests
     [InlineData("3M Philippines", true)]
     [InlineData("see https://spam.example", false)]
     [InlineData("a:b", false)]
+    [InlineData("St. Luke's Medical Center", true)]
+    [InlineData("Ateneo de Manila Univ., Inc.", true)]
+    [InlineData("pay at gcash-ph.com", false)]
+    [InlineData("Version 2.0", false)]
+    [InlineData("Inc./Ltd", false)]
+    [InlineData("Co. /Ltd", true)]
     [InlineData("<script>", false)]
     public void Company_and_occupation_rules(string value, bool ok) => Assert.Equal(ok, RegistrationForm.IsValidOrgText(value));
 }

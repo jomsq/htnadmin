@@ -20,9 +20,18 @@ public enum CheckInResult
 
     /// <summary>Bad signature, another event's ticket, an older ticket version, or an unknown participant ID.</summary>
     Invalid,
+
+    /// <summary>
+    /// A typed participant ID matched an attendee of this event. Nothing changes: the short ID is not a ticket. The desk
+    /// confirms the person (ID, ticket email) and then checks them in with POST /manual.
+    /// </summary>
+    Lookup,
 }
 
-/// <summary>How the attendee was identified: a signed QR, or a desk lookup (participant ID typed or picked from search).</summary>
+/// <summary>
+/// How the attendee was identified: a signed QR, or by staff (a typed participant ID, which only looks up, or a manual
+/// check-in of an attendee picked after a lookup or search).
+/// </summary>
 public enum CheckInMethod
 {
     Qr,
@@ -41,9 +50,32 @@ public static class CheckInStation
     }
 }
 
-/// <summary>Recognizes a typed participant ID (<c>HTN-XXXX-XXXX</c>, any case, dashes optional).</summary>
+/// <summary>
+/// Recognizes a typed participant ID (<c>HTN-XXXX-XXXX</c>, any case, dashes optional). A participant ID only ever
+/// identifies an attendee for a lookup; it never checks anyone in (that takes a signed QR or a manual check-in).
+/// </summary>
 public static partial class ParticipantIdInput
 {
+    /// <summary>Shortest typed prefix (without dashes, "HTN" included) the desk search matches participant IDs by.</summary>
+    public const int MinPrefixLength = 6;
+
+    /// <summary>
+    /// For the desk search: when <paramref name="input"/> looks like the start of a participant ID ("HTN" then letters
+    /// and digits, dashes and spaces ignored), the canonical dashed prefix of at least <see cref="MinPrefixLength"/>
+    /// characters (e.g. "htn7k3q" → "HTN-7K3"), or the full ID. Returns false for anything else, including ID-like input
+    /// that is too short or too long.
+    /// </summary>
+    public static bool TryPrefix(string? input, out bool looksLikeId, out string prefix)
+    {
+        prefix = "";
+        var compact = new string((input ?? "").Where(c => c is not ('-' or ' ')).ToArray()).ToUpperInvariant();
+        looksLikeId = compact.StartsWith(PublicIdGenerator.ParticipantPrefix, StringComparison.Ordinal) && compact.All(char.IsAsciiLetterOrDigit);
+        if (!looksLikeId || compact.Length is < MinPrefixLength or > 11) return false;
+        var body = compact[3..];
+        prefix = PublicIdGenerator.ParticipantPrefix + "-" + (body.Length <= 4 ? body : body[..4] + "-" + body[4..]);
+        return true;
+    }
+
     /// <summary>
     /// True when <paramref name="input"/> has the shape of a participant ID; <paramref name="participantId"/> is then the
     /// canonical upper-case, dashed form (which may still not exist, or use letters outside the alphabet).

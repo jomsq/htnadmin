@@ -64,6 +64,7 @@ public class HtnApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("RateLimiting:PublicEmailsPerIpPermitLimit", "100000");
         builder.UseSetting("RateLimiting:CheckInPermitLimit", "100000");
         builder.UseSetting("RateLimiting:CheckInSearchPermitLimit", "100000");
+        builder.UseSetting("RateLimiting:CheckInReadPermitLimit", "100000");
         builder.UseSetting("Tickets:SigningKey", TicketSigningKey);
         builder.UseSetting("Email:AllowLoggingSender", "true"); // the fake sender replaces it below
         builder.UseSetting("Auth:RequireBoard2fa", RequireBoard2fa ? "true" : "false");

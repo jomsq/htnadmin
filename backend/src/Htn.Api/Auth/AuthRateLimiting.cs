@@ -36,6 +36,7 @@ public static class AuthRateLimiting
                 o.AddPolicy(policy, http => PerIp(policy, http, s => PublicRateLimiting.PermitLimit(policy, s), s => s.PublicWindowSeconds));
             o.AddPolicy(CheckInRateLimiting.Scan, http => CheckInRateLimiting.PerUser(CheckInRateLimiting.Scan, http, s => s.CheckInPermitLimit));
             o.AddPolicy(CheckInRateLimiting.Search, http => CheckInRateLimiting.PerUser(CheckInRateLimiting.Search, http, s => s.CheckInSearchPermitLimit));
+            o.AddPolicy(CheckInRateLimiting.Read, http => CheckInRateLimiting.PerUser(CheckInRateLimiting.Read, http, s => s.CheckInReadPermitLimit));
         });
         return services;
     }
@@ -194,14 +195,17 @@ public sealed class PublicAttemptLimiter : IDisposable
 }
 
 /// <summary>
-/// Per signed-in user fixed windows for the check-in desk (scan + manual share one bucket, search has its own), so one
-/// station can't hammer token checks or page through the attendee list. Anonymous requests (rejected with 401 later)
+/// Per signed-in user fixed windows for the check-in desk (scan + manual share one bucket; search, and stats + recent,
+/// have their own), so one station can't hammer token checks or page through the attendee list. Anonymous requests (rejected with 401 later)
 /// fall back to a per-IP bucket.
 /// </summary>
 public static class CheckInRateLimiting
 {
     public const string Scan = "checkin-scan";
     public const string Search = "checkin-search";
+
+    /// <summary>Stats and recent scans (polled by the desk), one bucket for both.</summary>
+    public const string Read = "checkin-read";
 
     internal static RateLimitPartition<string> PerUser(string policy, HttpContext http, Func<RateLimitSettings, int> permits)
     {
