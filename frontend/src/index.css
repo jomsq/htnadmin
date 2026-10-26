@@ -15,13 +15,16 @@
 }
 
 /*
- * The organization brand color is admin-configurable (Settings > Organization theme).
- * Set --brand / --brand-hover / --brand-dark on <html> to retheme; brand-* utilities follow.
+ * The organization brand color is admin-configurable (Settings > Email branding & org theme).
+ * BrandSync sets --brand (and the derived --brand-hover / --brand-dark) on <html> from
+ * GET /api/settings/org; every brand-* utility derives from these variables.
  */
 :root {
   --brand: #B71C1C;
   --brand-hover: #8E1616;
   --brand-dark: #F87171;
+  --color-brand-50: color-mix(in srgb, var(--brand) 6%, white);
+  --color-brand-100: color-mix(in srgb, var(--brand) 12%, white);
   --color-brand-600: var(--brand);
   --color-brand-700: var(--brand-hover);
   --color-brand-300: var(--brand-dark);

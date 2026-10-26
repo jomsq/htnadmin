@@ -1,5 +1,7 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router'
 import { isApiError } from '@/app/api'
+import { meQueryKey } from '@/app/auth/me'
 import { errorMessage, INVITE_INVALID_MESSAGE } from '@/app/errors'
 import { AuthLayout } from '@/app/layouts/AuthLayout'
 import { Alert } from '@/components/ui/Alert'
@@ -73,6 +75,7 @@ function InvalidInvite() {
 
 function AcceptInviteForm({ token, invite }: { token: string; invite: InviteInfo }) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const mutation = useAcceptInviteMutation()
   const passwordError = isApiError(mutation.error, 400) ? mutation.error.fieldErrors.password : undefined
 
@@ -105,8 +108,16 @@ function AcceptInviteForm({ token, invite }: { token: string; invite: InviteInfo
           mutation.mutate(
             { token, password },
             {
-              onSuccess: () =>
-                navigate('/login', { replace: true, state: { notice: 'Your account is ready. Sign in with your new password.' } }),
+              onSuccess: async ({ requiresTwoFactorSetup }) => {
+                if (requiresTwoFactorSetup) {
+                  // Board accounts turn on 2-step verification right away. If accepting signed them in,
+                  // /me now returns them; otherwise the 2FA route sends them to sign in first.
+                  await queryClient.invalidateQueries({ queryKey: meQueryKey })
+                  navigate('/setup-2fa', { replace: true })
+                  return
+                }
+                navigate('/login', { replace: true, state: { notice: 'Your account is ready. Sign in with your new password.' } })
+              },
             },
           )
         }

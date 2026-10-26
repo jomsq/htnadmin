@@ -20,3 +20,14 @@ export function AccountStatusBadge({ status }: { status: AccountStatus | null })
   if (!status) return <span className="text-gray-500 dark:text-gray-400">—</span>
   return <Badge color={statusColor[status]}>{accountStatusLabel[status]}</Badge>
 }
+
+/** CFO / finance assistant flags (Finance roles card on the Positions tab). */
+export function FinanceRoleBadges({ isCfo, isFinanceAssistant }: { isCfo: boolean; isFinanceAssistant: boolean }) {
+  if (!isCfo && !isFinanceAssistant) return null
+  return (
+    <>
+      {isCfo ? <Badge color="gray">CFO</Badge> : null}
+      {isFinanceAssistant ? <Badge color="gray">Finance assistant</Badge> : null}
+    </>
+  )
+}

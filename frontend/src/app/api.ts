@@ -163,14 +163,16 @@ async function readBody(res: Response): Promise<unknown> {
 export async function apiRequest(path: string, options: ApiOptions = {}, retried = false): Promise<ApiResponse> {
   const method = options.method ?? 'GET'
   const headers: Record<string, string> = { Accept: 'application/json' }
-  if (options.body !== undefined) headers['Content-Type'] = 'application/json'
+  // FormData (file uploads) goes as multipart: the browser sets the boundary header itself.
+  const form = options.body instanceof FormData ? options.body : null
+  if (options.body !== undefined && !form) headers['Content-Type'] = 'application/json'
   if (method !== 'GET') headers[CSRF_HEADER] = await getCsrfToken()
 
   const res = await fetch(toUrl(path), {
     method,
     headers,
     credentials: 'include',
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body: form ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
     signal: options.signal,
   })
 

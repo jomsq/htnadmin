@@ -3,6 +3,7 @@ export const Policies = {
   PeopleView: 'People.View',
   PeopleManage: 'People.Manage',
   SettingsPersonal: 'Settings.Personal',
+  SettingsManage: 'Settings.Manage',
   FinanceView: 'Finance.View',
 } as const
 

@@ -20,6 +20,7 @@ function renderInvite(token = 'tok-123') {
     [
       { path: '/invite/:token', element: <InvitePage /> },
       { path: '/login', element: <LoginPage /> },
+      { path: '/setup-2fa', element: <h1>Turn on 2-step verification</h1> },
     ],
     `/invite/${token}`,
   )
@@ -65,6 +66,27 @@ describe('InvitePage', () => {
     await setPassword()
     expect(await screen.findByText('Your account is ready. Sign in with your new password.')).toBeInTheDocument()
     expect(body).toEqual({ token: 'tok-123', password: 'a-long-new-password' })
+  })
+
+  it('accepts a 200 body without 2FA and returns to sign in', async () => {
+    server.use(
+      http.get('/api/auth/invite/:token', () => HttpResponse.json(invite)),
+      http.post('/api/auth/invite/accept', () => HttpResponse.json({ requiresTwoFactorSetup: false })),
+    )
+    renderInvite()
+    await setPassword()
+    expect(await screen.findByText('Your account is ready. Sign in with your new password.')).toBeInTheDocument()
+  })
+
+  it('goes straight to 2FA setup when the server says requiresTwoFactorSetup (board)', async () => {
+    server.use(
+      http.get('/api/auth/invite/:token', () => HttpResponse.json({ ...invite, level: 'Board' })),
+      http.post('/api/auth/invite/accept', () => HttpResponse.json({ requiresTwoFactorSetup: true })),
+    )
+    const { router } = renderInvite()
+    await setPassword()
+    expect(await screen.findByRole('heading', { name: 'Turn on 2-step verification' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/setup-2fa')
   })
 
   it('shows the invalid state when the token is unknown, used or expired (404)', async () => {

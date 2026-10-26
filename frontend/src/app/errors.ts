@@ -16,6 +16,12 @@ const codeMessages: Record<string, string> = {
   person_deactivated: 'This person is deactivated.',
   self_deactivate: "You can't deactivate your own account.",
   '2fa_already_enabled': 'Two-step verification is already on.',
+  invalid_promotion: 'People move one step at a time: Member → Apprentice → Goon. Anyone can be seated on the Board.',
+  email_locked: 'The email can only change before the person has activated their login.',
+  duplicate_email: 'Someone with this email is already in the organization.',
+  import_has_errors: 'Some rows have errors. Fix the file and preview it again.',
+  wrong_level: "This person's level doesn't fit that role.",
+  low_contrast: 'This color is too light for white text. Pick a darker shade (contrast 4.5:1 or more).',
 }
 
 /** Message for a known API error code, if any. */

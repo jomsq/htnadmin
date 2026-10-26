@@ -15,9 +15,11 @@ import { PeopleIcon, SearchIcon } from '@/components/ui/icons'
 import { cn } from '@/lib/cn'
 import { initials } from '@/lib/format'
 import { useDebouncedValue } from '@/lib/useDebouncedValue'
-import { usePeopleQuery } from './api'
-import { AccountStatusBadge, LevelBadge } from './components/badges'
+import { useLevelCounts, usePeopleQuery } from './api'
+import { AccountStatusBadge, FinanceRoleBadges, LevelBadge } from './components/badges'
 import { CreateAccountDialog } from './components/CreateAccountDialog'
+import { ImportCsvDialog } from './components/ImportCsvDialog'
+import { OrganizationTabs } from './components/OrganizationTabs'
 import { PersonDrawer } from './components/PersonDrawer'
 import { fullName } from './format'
 import type { Level, Person } from './schemas'
@@ -38,6 +40,8 @@ export function PeoplePage() {
   const [searchInput, setSearchInput] = useState('')
   const [page, setPage] = useState(1)
   const [creating, setCreating] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const counts = useLevelCounts()
   const [selected, setSelected] = useState<Person | null>(null)
   const search = useDebouncedValue(searchInput.trim(), 300)
   const [lastSearch, setLastSearch] = useState(search)
@@ -52,30 +56,47 @@ export function PeoplePage() {
   const data = query.data
   const filtered = !!level || !!search
   const createButton = canManage ? <Button onClick={() => setCreating(true)}>+ Create account</Button> : null
+  const headerActions = canManage ? (
+    <>
+      <Button variant="secondary" onClick={() => setImporting(true)}>
+        Import CSV
+      </Button>
+      {createButton}
+    </>
+  ) : null
 
   return (
     <>
       <PageHeader
         title="Organization"
         description="Board, goons, apprentices and members. Promote people along the path Member → Apprentice → Goon."
-        actions={createButton}
+        actions={headerActions}
       />
+      <OrganizationTabs />
 
       <Card aria-label="People">
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 px-5 py-4 dark:border-white/10">
           <div role="group" aria-label="Filter by level" className="flex flex-wrap gap-2">
-            {filters.map((f) => (
-              <FilterChip
-                key={f.label}
-                selected={level === f.level}
-                onClick={() => {
-                  setLevel(f.level)
-                  setPage(1)
-                }}
-              >
-                {f.label}
-              </FilterChip>
-            ))}
+            {filters.map((f) => {
+              const count = counts[f.level ?? 'All']
+              return (
+                <FilterChip
+                  key={f.label}
+                  selected={level === f.level}
+                  onClick={() => {
+                    setLevel(f.level)
+                    setPage(1)
+                  }}
+                >
+                  {f.label}
+                  {count !== undefined ? (
+                    <span className="text-gray-600 tabular-nums dark:text-gray-400">
+                      <span className="sr-only">,</span> {count}
+                    </span>
+                  ) : null}
+                </FilterChip>
+              )
+            })}
           </div>
           <label className="flex h-9 w-full min-w-[220px] items-center gap-2 rounded-md bg-white px-3 text-sm text-gray-600 ring-1 ring-gray-300 ring-inset focus-within:outline-2 focus-within:outline-brand-600 sm:ml-auto sm:w-auto dark:bg-gray-900 dark:text-gray-400 dark:ring-white/15">
             <span className="sr-only">Search people</span>
@@ -148,7 +169,10 @@ export function PeoplePage() {
                       </button>
                     </Td>
                     <Td>
-                      <LevelBadge level={p.level} />
+                      <span className="flex flex-wrap gap-1.5">
+                        <LevelBadge level={p.level} />
+                        <FinanceRoleBadges isCfo={p.isCfo} isFinanceAssistant={p.isFinanceAssistant} />
+                      </span>
                     </Td>
                     <Td>{p.position || '—'}</Td>
                     <Td>
@@ -164,6 +188,7 @@ export function PeoplePage() {
       </Card>
 
       {canManage ? <CreateAccountDialog open={creating} onClose={() => setCreating(false)} /> : null}
+      {canManage && importing ? <ImportCsvDialog onClose={() => setImporting(false)} /> : null}
       <PersonDrawer person={selected} onClose={() => setSelected(null)} />
     </>
   )

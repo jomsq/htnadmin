@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { api, apiRequest, apiVoid, isApiError } from '@/app/api'
 import { meSchema, type Me } from '@/app/auth/me'
-import { inviteInfoSchema, loginAcceptedSchema, twoFactorSetupSchema, type InviteInfo } from './schemas'
+import { acceptInviteResultSchema, inviteInfoSchema, loginAcceptedSchema, twoFactorSetupSchema, type InviteInfo } from './schemas'
 
 export type LoginResult = { kind: 'signedIn'; me: Me } | { kind: 'twoFactor' }
 
@@ -58,7 +58,8 @@ export function useInviteQuery(token: string) {
 
 export function useAcceptInviteMutation() {
   return useMutation({
-    mutationFn: (body: { token: string; password: string }) => apiVoid('/api/auth/invite/accept', { method: 'POST', body }),
+    mutationFn: (body: { token: string; password: string }) =>
+      api('/api/auth/invite/accept', acceptInviteResultSchema, { method: 'POST', body }),
   })
 }
 

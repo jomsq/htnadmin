@@ -15,7 +15,7 @@ export const boardMe: Me = {
   twoFactorEnabled: true,
   // The server sends true only while the board 2FA gate applies.
   twoFactorRequired: false,
-  policies: ['People.View', 'People.Manage', 'Settings.Personal', 'Finance.View'],
+  policies: ['People.View', 'People.Manage', 'Settings.Personal', 'Settings.Manage', 'Finance.View'],
   preferences: { mode: 'system', textSize: 'default', density: 'comfortable' },
 }
 
@@ -32,8 +32,21 @@ export const goonMe: Me = {
   policies: ['People.View', 'Settings.Personal'],
 }
 
+/** GET /api/settings/org as seeded (domain defaults, canvas brand color). */
+export const orgSettings = {
+  points: {
+    leadMultiplier: 1,
+    collabMultiplier: 0.7,
+    assistantMultiplier: 0.3,
+    presets: { small: 10, medium: 20, large: 40, xl: 80 },
+    requireTaskApproval: true,
+  },
+  branding: { brandColor: '#B71C1C', logoLightUrl: null, logoDarkUrl: null, paymentDeadlineHours: 48 },
+}
+
 export const defaultHandlers = [
   http.get('/api/auth/antiforgery', () => HttpResponse.json({ token: CSRF })),
+  http.get('/api/settings/org', () => HttpResponse.json(orgSettings)),
   http.get('/api/auth/me', () => HttpResponse.json({ title: 'Unauthorized', status: 401 }, { status: 401 })),
 ]
 

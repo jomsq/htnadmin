@@ -2,6 +2,7 @@ import { useRef, useState, type ComponentType } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router'
 import { useAuth } from '@/app/auth/auth-context'
 import { Policies } from '@/app/auth/policies'
+import { BrandSync } from '@/app/theme/BrandSync'
 import { Avatar } from '@/components/ui/Avatar'
 import { ModeSwitch } from '@/components/ui/ModeSwitch'
 import { useModal } from '@/components/ui/useModal'
@@ -177,6 +178,7 @@ export function AppLayout() {
 
   return (
     <div className="min-h-screen bg-gray-50 md:flex dark:bg-gray-950">
+      <BrandSync />
       <a
         href="#main"
         className="sr-only z-50 rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-900 focus:not-sr-only focus:fixed focus:top-2 focus:left-2"

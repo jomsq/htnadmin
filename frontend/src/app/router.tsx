@@ -44,9 +44,19 @@ export const routes: RouteObject[] = [
               {
                 path: '/people',
                 element: <RequirePolicy policy={Policies.PeopleView} />,
-                children: [{ index: true, lazy: async () => ({ Component: (await import('@/features/organization/PeoplePage')).PeoplePage }) }],
+                children: [
+                  { index: true, lazy: async () => ({ Component: (await import('@/features/organization/PeoplePage')).PeoplePage }) },
+                  {
+                    path: 'positions',
+                    lazy: async () => ({ Component: (await import('@/features/organization/PositionsPage')).PositionsPage }),
+                  },
+                ],
               },
               { path: '/settings', lazy: async () => ({ Component: (await import('@/features/settings/SettingsPage')).SettingsPage }) },
+              {
+                path: '/settings/permissions',
+                lazy: async () => ({ Component: (await import('@/features/settings/PermissionsPage')).PermissionsPage }),
+              },
               comingSoon('/events', 'Events', 'Events, tickets, committees, registrations and check-in.'),
               comingSoon('/directory', 'Directory', 'Agencies, companies, universities, non-profits and suppliers.'),
               comingSoon('/store', 'Merch store', 'Leftover stock and pop-up stores.'),

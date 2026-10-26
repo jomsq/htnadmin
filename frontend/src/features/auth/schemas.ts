@@ -41,3 +41,11 @@ export const inviteInfoSchema = z.object({
   expiresAt: z.string(),
 })
 export type InviteInfo = z.infer<typeof inviteInfoSchema>
+
+/** POST /api/auth/invite/accept: board accounts must set up 2FA next. Older servers answer 204 (no body). */
+export const acceptInviteResultSchema = z
+  .object({ requiresTwoFactorSetup: z.boolean().default(false) })
+  .loose()
+  .optional()
+  .transform((v) => ({ requiresTwoFactorSetup: v?.requiresTwoFactorSetup ?? false }))
+export type AcceptInviteResult = z.output<typeof acceptInviteResultSchema>
