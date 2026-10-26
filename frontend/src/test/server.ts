@@ -1,0 +1,44 @@
+import { http, HttpResponse } from 'msw'
+import { setupServer } from 'msw/node'
+import type { Me } from '@/app/auth/me'
+
+export const CSRF = 'test-csrf-token'
+
+export const boardMe: Me = {
+  id: 'u1',
+  personId: 'p1',
+  firstName: 'Alex',
+  lastName: 'Reyes',
+  email: 'alex@hackthenorth.ph',
+  level: 'Board',
+  isCfo: false,
+  twoFactorEnabled: true,
+  twoFactorRequired: true,
+  policies: ['People.View', 'People.Manage', 'Settings.Personal', 'Finance.View'],
+  preferences: { mode: 'system', textSize: 'default', density: 'comfortable' },
+}
+
+export const goonMe: Me = {
+  ...boardMe,
+  id: 'u2',
+  personId: 'p2',
+  firstName: 'Mika',
+  lastName: 'Soriano',
+  email: 'mika@hackthenorth.ph',
+  level: 'Goon',
+  twoFactorEnabled: false,
+  twoFactorRequired: false,
+  policies: ['People.View', 'Settings.Personal'],
+}
+
+export const defaultHandlers = [
+  http.get('/api/auth/antiforgery', () => HttpResponse.json({ token: CSRF })),
+  http.get('/api/auth/me', () => HttpResponse.json({ title: 'Unauthorized', status: 401 }, { status: 401 })),
+]
+
+export const server = setupServer(...defaultHandlers)
+
+/** Make /api/auth/me return this user. */
+export function signInAs(me: Me) {
+  server.use(http.get('/api/auth/me', () => HttpResponse.json(me)))
+}

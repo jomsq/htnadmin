@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>HTN Admin</title>
+    <script>
+      // Apply saved display preferences before first paint (no light flash in dark mode).
+      try {
+        var p = JSON.parse(localStorage.getItem('htn.preferences') || '{}')
+        var d = document.documentElement
+        var dark = p.mode === 'dark' || (p.mode !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        d.dataset.theme = dark ? 'dark' : 'light'
+        if (p.textSize) d.dataset.textSize = p.textSize
+        if (p.density) d.dataset.density = p.density
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

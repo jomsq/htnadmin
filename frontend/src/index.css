@@ -1,0 +1,64 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+/* Compact density (Settings > Appearance): table rows py-3 -> py-2. */
+@custom-variant compact (&:where([data-density=compact], [data-density=compact] *));
+
+@theme {
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-brand-50: #FEF2F2;
+  --color-brand-100: #FEE2E2;
+  --color-brand-600: #B71C1C; /* primary: buttons, active tab underline, links */
+  --color-brand-700: #8E1616; /* hover, active text */
+  --color-brand-300: #F87171; /* links/active text in dark mode */
+}
+
+/*
+ * The organization brand color is admin-configurable (Settings > Organization theme).
+ * Set --brand / --brand-hover / --brand-dark on <html> to retheme; brand-* utilities follow.
+ */
+:root {
+  --brand: #B71C1C;
+  --brand-hover: #8E1616;
+  --brand-dark: #F87171;
+  --color-brand-600: var(--brand);
+  --color-brand-700: var(--brand-hover);
+  --color-brand-300: var(--brand-dark);
+  color-scheme: light;
+  font-size: 16px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/* Text size (Settings > Appearance): Default 16px, Large 18px root. */
+:root[data-text-size="large"] {
+  font-size: 18px;
+}
+
+@layer base {
+  html,
+  body {
+    @apply bg-gray-50 font-sans text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-50;
+  }
+
+  body {
+    min-height: 100vh;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand-600);
+    outline-offset: 2px;
+  }
+
+  [data-theme="dark"] :focus-visible {
+    outline-color: var(--color-brand-300);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
