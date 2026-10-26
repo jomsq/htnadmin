@@ -74,6 +74,14 @@ public sealed class Attendee
         };
     }
 
+    internal void MarkCheckedIn(string station, Guid staffUserId, DateTimeOffset at)
+    {
+        if (CheckedInAt is not null) throw new DomainException("This attendee is already checked in.");
+        CheckedInAt = at;
+        CheckedInStation = station;
+        CheckedInById = staffUserId;
+    }
+
     /// <summary>Makes every QR issued so far invalid (the next ticket email carries the new version).</summary>
     internal void BumpTicketVersion() => TicketVersion++;
 

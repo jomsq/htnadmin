@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Htn.Api.Tests.CheckIn;
 using Htn.Api.Tests.Infrastructure;
 using Htn.Domain.Organization;
 using Htn.Infrastructure.Email;
@@ -135,6 +136,7 @@ public sealed class PromotionAndDetailTests(HtnApiFactory factory) : IClassFixtu
         var cfo = await factory.CreateUserAsync(PersonLevel.Board);
         Assert.Equal(HttpStatusCode.OK, (await board.PutAsync("/api/finance-roles", new { cfoPersonId = cfo.PersonId, assistantPersonId = goon.PersonId })).StatusCode);
 
+        await factory.SeedCheckInAsync(goon.Email); // Member rule
         var res = await board.PostAsync($"/api/people/{goon.PersonId}/promote", new { toLevel = "Member", reason = "Moved abroad" });
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
         var dto = await ApiClient.JsonAsync(res);
@@ -304,6 +306,7 @@ public sealed class PromotionAndDetailTests(HtnApiFactory factory) : IClassFixtu
         var goon = await factory.CreateUserAsync(PersonLevel.Goon);
         var stampBefore = await factory.DbAsync(db => db.Users.Where(u => u.Id == goon.UserId).Select(u => u.SecurityStamp).SingleAsync());
 
+        await factory.SeedCheckInAsync(goon.Email); // Member rule
         Assert.Equal(HttpStatusCode.OK, (await board.PostAsync($"/api/people/{goon.PersonId}/promote", new { toLevel = "Member", reason = "Took a break" })).StatusCode);
         var back = await board.PostAsync($"/api/people/{goon.PersonId}/promote", new { toLevel = "Apprentice" });
         Assert.Equal(HttpStatusCode.OK, back.StatusCode);

@@ -49,8 +49,13 @@ public sealed record PersonPositionDto(Guid Id, string Title, PositionKind Kind)
 
 public sealed record PersonHistoryDto(DateTimeOffset At, string Kind, string? From, string? To, string? Reason, string? ActorName);
 
-/// <summary>GET /api/people/{id}. <see cref="History"/> is empty for non-Board callers.</summary>
-public sealed record PersonDetailDto(PersonDto Person, IReadOnlyList<PersonPositionDto> Positions, IReadOnlyList<PersonHistoryDto> History);
+/// <summary>An event this person checked in at (matched by email, case-insensitive), from check-in records.</summary>
+public sealed record PersonAttendanceDto(Guid EventId, string EventName, DateTimeOffset CheckedInAt);
+
+/// <summary>GET /api/people/{id}. <see cref="History"/> and <see cref="Attendance"/> are empty for non-Board callers.</summary>
+public sealed record PersonDetailDto(
+    PersonDto Person, IReadOnlyList<PersonPositionDto> Positions, IReadOnlyList<PersonHistoryDto> History,
+    IReadOnlyList<PersonAttendanceDto> Attendance);
 
 public sealed record PromotePersonRequest(PersonLevel? ToLevel, string? Reason);
 

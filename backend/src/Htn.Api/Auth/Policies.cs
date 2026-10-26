@@ -45,7 +45,7 @@ public static class Policies
     ];
 
     /// <summary>
-    /// Phase 1 implements People.* and Settings.Personal; Phase 3 adds Events.View (any signed-in Board/Goon/Apprentice). Everything else is registered as Board-only
+    /// Phase 1 implements People.* and Settings.Personal; Phase 3 adds Events.View and CheckIn.Scan (any signed-in Board/Goon/Apprentice). Everything else is registered as Board-only
     /// (Finance.Post/Approve as CFO-only) until its slice adds the scoped handlers.
     /// </summary>
     public static AuthorizationBuilder AddHtnPolicies(this AuthorizationBuilder auth)
@@ -56,11 +56,13 @@ public static class Policies
         auth.AddPolicy(PeopleManage, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board));
         auth.AddPolicy(SettingsPersonal, p => p.RequireAuthenticatedUser());
         auth.AddPolicy(EventsView, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board, Roles.Goon, Roles.Apprentice));
+        // Every staff role works the check-in desk (committee leads are goons).
+        auth.AddPolicy(CheckInScan, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board, Roles.Goon, Roles.Apprentice));
 
         auth.AddPolicy(FinancePost, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board).RequireClaim(HtnClaimTypes.Cfo, "true"));
         auth.AddPolicy(FinanceApprove, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board).RequireClaim(HtnClaimTypes.Cfo, "true"));
 
-        string[] implemented = [PeopleView, PeopleManage, SettingsPersonal, EventsView, FinancePost, FinanceApprove];
+        string[] implemented = [PeopleView, PeopleManage, SettingsPersonal, EventsView, CheckInScan, FinancePost, FinanceApprove];
         foreach (var name in All.Except(implemented))
             auth.AddPolicy(name, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board));
 

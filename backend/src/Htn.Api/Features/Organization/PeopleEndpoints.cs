@@ -104,6 +104,8 @@ public static class PeopleEndpoints
         var level = req.Level!.Value;
         if (await db.People.AnyAsync(p => p.Email == email, ct) || await users.FindByEmailAsync(email) is not null)
             return Problems.Field("email", DuplicateEmail);
+        if (MemberRule.RequiresCheckIn(level) && !await HasCheckedInAsync(db, email, ct))
+            return NoCheckIn();
 
         var now = clock.GetUtcNow();
         var person = Person.Create(req.FirstName, req.MiddleName, req.LastName, email, level, req.Position, now, me.Id);
@@ -247,8 +249,18 @@ public static class PeopleEndpoints
             .ToListAsync(ct);
 
         IReadOnlyList<PersonHistoryDto> history = [];
+        IReadOnlyList<PersonAttendanceDto> attendance = [];
         if (full)
         {
+            var email = await db.People.AsNoTracking().Where(p => p.Id == id).Select(p => p.Email).SingleAsync(ct);
+            attendance = await (
+                    from a in db.Attendees.AsNoTracking()
+                    where a.CheckedInAt != null && a.Email.ToLower() == email
+                    join e in db.Events on a.EventId equals e.Id
+                    orderby a.CheckedInAt descending, a.Id
+                    select new PersonAttendanceDto(e.Id, e.Name, a.CheckedInAt!.Value))
+                .ToListAsync(ct);
+
             var rows = await (
                 from h in db.PersonHistory.AsNoTracking()
                 where h.PersonId == id
@@ -262,7 +274,7 @@ public static class PeopleEndpoints
             history = rows.Select(r => new PersonHistoryDto(r.At, PersonHistoryKinds.ToApiName(r.Kind), r.FromValue, r.ToValue, r.Reason, r.Actor)).ToList();
         }
 
-        return TypedResults.Ok(new PersonDetailDto(person, positions, history));
+        return TypedResults.Ok(new PersonDetailDto(person, positions, history, attendance));
     }
 
     private static async Task<IResult> Update(
@@ -355,6 +367,8 @@ public static class PeopleEndpoints
             case var error:
                 return Problems.Result(StatusCodes.Status400BadRequest, PromotionErrors.Message(error, from, to), code: "invalid_promotion");
         }
+        if (MemberRule.RequiresCheckIn(to) && !await HasCheckedInAsync(db, person.Email, ct))
+            return NoCheckIn();
 
         var now = clock.GetUtcNow();
         var reason = string.IsNullOrWhiteSpace(req.Reason) ? null : req.Reason.Trim();
@@ -444,7 +458,9 @@ public static class PeopleEndpoints
             var created = new List<Person>();
             foreach (var row in rows!)
             {
-                var person = Person.Create(row.FirstName, row.MiddleName, row.LastName, row.Email, row.Level!.Value, row.Position, now, me.Id);
+                // Exempt from the Member check-in rule (existing members are brought in as they are); history says so.
+                var person = Person.Create(row.FirstName, row.MiddleName, row.LastName, row.Email, row.Level!.Value, row.Position, now, me.Id,
+                    MemberRule.ImportedReason);
                 db.People.Add(person);
                 created.Add(person);
             }
@@ -488,6 +504,13 @@ public static class PeopleEndpoints
             return Problems.Result(StatusCodes.Status409Conflict, DuplicateEmail, code: "duplicate_email");
         }
     }
+
+    /// <summary>An attendee with this email (case-insensitive) has checked in at any event. <paramref name="email"/> is normalized.</summary>
+    internal static Task<bool> HasCheckedInAsync(HtnDbContext db, string email, CancellationToken ct) =>
+        db.Attendees.AsNoTracking().AnyAsync(a => a.CheckedInAt != null && a.Email.ToLower() == email, ct);
+
+    private static IResult NoCheckIn() =>
+        Problems.Result(StatusCodes.Status400BadRequest, MemberRule.Message, code: MemberRule.ErrorCode);
 
     private static bool IsUniqueViolation(DbUpdateException ex) =>
         ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };

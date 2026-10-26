@@ -1,4 +1,5 @@
 using Htn.Domain.Common;
+using Htn.Domain.CheckIn;
 using Htn.Domain.Events;
 
 namespace Htn.Domain.Registrations;
@@ -168,6 +169,45 @@ public sealed class Registration
         CancelledById = actorId;
         ProofTokenHash = null;
         UpdatedAt = at;
+    }
+
+    /// <summary>
+    /// The desk outcome for one attendee of this checkout, without changing anything: Cancelled, NotPaid (pending payment),
+    /// AlreadyCheckedIn (that attendee has a check-in), else Welcome.
+    /// </summary>
+    public CheckInResult CheckInResultFor(Attendee attendee)
+    {
+        if (attendee.RegistrationId != Id) throw new DomainException("The attendee belongs to another registration.");
+        return Status switch
+        {
+            RegistrationStatus.Cancelled => CheckInResult.Cancelled,
+            RegistrationStatus.PendingPayment => CheckInResult.NotPaid,
+            _ when attendee.CheckedInAt is not null => CheckInResult.AlreadyCheckedIn,
+            _ => CheckInResult.Welcome,
+        };
+    }
+
+    /// <summary>
+    /// Checks one attendee in at a station and returns the outcome (see <see cref="CheckInResultFor"/>). Only Welcome
+    /// changes state: the attendee gets their own check-in, and the registration becomes CheckedIn when its first
+    /// attendee arrives (a group counts as checked in once anyone is in; each attendee keeps their own flag).
+    /// </summary>
+    public CheckInResult CheckIn(Guid attendeeId, string station, Guid staffUserId, DateTimeOffset at)
+    {
+        var attendee = Attendees.SingleOrDefault(a => a.Id == attendeeId)
+                       ?? throw new DomainException("The attendee belongs to another registration.");
+        var result = CheckInResultFor(attendee);
+        if (result != CheckInResult.Welcome) return result;
+        var s = CheckInStation.Normalize(station)
+                ?? throw new DomainException($"Station name is required (at most {CheckInStation.MaxLength} characters).");
+        attendee.MarkCheckedIn(s, staffUserId, at);
+        if (Status == RegistrationStatus.Paid)
+        {
+            Status = RegistrationStatus.CheckedIn;
+            CheckedInAt = at;
+        }
+        UpdatedAt = at;
+        return result;
     }
 
     /// <summary>Replaces the proof-upload token (the previous link stops working).</summary>

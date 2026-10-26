@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Htn.Api.Tests.CheckIn;
 using Htn.Api.Tests.Infrastructure;
 using Htn.Domain.Outbox;
 using Htn.Domain.Organization;
@@ -98,6 +99,7 @@ public sealed class PeopleEndpointsTests(HtnApiFactory factory) : IClassFixture<
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
         var email = HtnApiFactory.UniqueEmail("member");
+        await factory.SeedCheckInAsync(email); // Member rule: checked in at an event
         var res = await board.PostAsync("/api/people", NewPerson("Member", email));
         Assert.Equal(HttpStatusCode.Created, res.StatusCode);
         var dto = await ApiClient.JsonAsync(res);
@@ -113,6 +115,7 @@ public sealed class PeopleEndpointsTests(HtnApiFactory factory) : IClassFixture<
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
         var email = HtnApiFactory.UniqueEmail("dup");
+        await factory.SeedCheckInAsync(email);
         Assert.Equal(HttpStatusCode.Created, (await board.PostAsync("/api/people", NewPerson("Member", email))).StatusCode);
 
         var res = await board.PostAsync("/api/people", NewPerson("Goon", email.ToUpperInvariant()));
@@ -142,7 +145,9 @@ public sealed class PeopleEndpointsTests(HtnApiFactory factory) : IClassFixture<
         var tag = Guid.NewGuid().ToString("N")[..8];
         for (var i = 0; i < 3; i++)
             await board.PostAsync("/api/people", new { firstName = $"Zed{tag}", lastName = $"Apprentice{i}", email = HtnApiFactory.UniqueEmail(), level = "Apprentice" });
-        await board.PostAsync("/api/people", new { firstName = $"Zed{tag}", lastName = "Member", email = HtnApiFactory.UniqueEmail(), level = "Member" });
+        var memberEmail = HtnApiFactory.UniqueEmail();
+        await factory.SeedCheckInAsync(memberEmail);
+        await board.PostAsync("/api/people", new { firstName = $"Zed{tag}", lastName = "Member", email = memberEmail, level = "Member" });
 
         var all = await ApiClient.JsonAsync(await board.GetAsync($"/api/people?search=zed{tag}"));
         Assert.Equal(4, all.GetProperty("total").GetInt32());
@@ -262,7 +267,7 @@ public sealed class PeopleEndpointsTests(HtnApiFactory factory) : IClassFixture<
     public async Task Audit_entries_are_append_only_in_the_database()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        await board.PostAsync("/api/people", NewPerson("Member"));
+        await board.PostAsync("/api/people", NewPerson("Apprentice"));
         var ex = await Assert.ThrowsAnyAsync<Exception>(() =>
             factory.DbAsync(db => db.Database.ExecuteSqlRawAsync("UPDATE audit_entries SET reason = 'tampered'")));
         Assert.Contains("append-only", ex.Message, StringComparison.Ordinal);

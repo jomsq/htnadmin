@@ -36,7 +36,7 @@ public sealed class Person
 
     public static Person Create(
         string firstName, string? middleName, string lastName, string email,
-        PersonLevel level, string? position, DateTimeOffset at, Guid? actorId)
+        PersonLevel level, string? position, DateTimeOffset at, Guid? actorId, string? reason = null)
     {
         var person = new Person
         {
@@ -50,7 +50,8 @@ public sealed class Person
             IsActive = true,
             CreatedAt = at,
         };
-        person._history.Add(new PersonHistory(person.Id, at, actorId, PersonHistoryKinds.Created, null, level.ToString(), null));
+        person._history.Add(new PersonHistory(person.Id, at, actorId, PersonHistoryKinds.Created, null, level.ToString(),
+            Optional(reason, "Reason", ReasonMaxLength)));
         return person;
     }
 

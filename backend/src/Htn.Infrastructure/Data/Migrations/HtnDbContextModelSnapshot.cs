@@ -83,6 +83,74 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.ToTable("audit_entries", (string)null);
                 });
 
+            modelBuilder.Entity("Htn.Domain.CheckIn.CheckInScan", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<Guid?>("AttendeeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("attendee_id");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("method");
+
+                    b.Property<string>("Result")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("result");
+
+                    b.Property<Guid>("StaffUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("staff_user_id");
+
+                    b.Property<string>("Station")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("station");
+
+                    b.HasKey("Id")
+                        .HasName("pk_check_in_scans");
+
+                    b.HasIndex("AttendeeId")
+                        .HasDatabaseName("ix_check_in_scans_attendee_id")
+                        .HasFilter("attendee_id IS NOT NULL");
+
+                    b.HasIndex("StaffUserId")
+                        .HasDatabaseName("ix_check_in_scans_staff_user_id");
+
+                    b.HasIndex("EventId", "At")
+                        .HasDatabaseName("ix_check_in_scans_event_id_at");
+
+                    b.HasIndex("EventId", "Station", "At")
+                        .HasDatabaseName("ix_check_in_scans_event_id_station_at");
+
+                    b.ToTable("check_in_scans", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_check_in_scans_attendee", "attendee_id IS NOT NULL OR result = 'Invalid'");
+
+                            t.HasCheckConstraint("ck_check_in_scans_method", "method IN ('Qr', 'Manual')");
+
+                            t.HasCheckConstraint("ck_check_in_scans_result", "result IN ('Welcome', 'AlreadyCheckedIn', 'NotPaid', 'Cancelled', 'Invalid')");
+
+                            t.HasCheckConstraint("ck_check_in_scans_station", "char_length(station) BETWEEN 1 AND 40 AND station = btrim(station)");
+                        });
+                });
+
             modelBuilder.Entity("Htn.Domain.Events.Event", b =>
                 {
                     b.Property<Guid>("Id")
@@ -916,6 +984,10 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.HasIndex("ParticipantId")
                         .HasDatabaseName("ix_attendees_participant_id");
 
+                    b.HasIndex("EventId", "CheckedInStation")
+                        .HasDatabaseName("ix_attendees_event_id_checked_in_station")
+                        .HasFilter("checked_in_at IS NOT NULL");
+
                     b.HasIndex("EventId", "ParticipantId")
                         .IsUnique()
                         .HasDatabaseName("ux_attendees_event_participant_id");
@@ -926,6 +998,8 @@ namespace Htn.Infrastructure.Data.Migrations
 
                     b.ToTable("attendees", null, t =>
                         {
+                            t.HasCheckConstraint("ck_attendees_checked_in", "(checked_in_at IS NULL) = (checked_in_station IS NULL) AND (checked_in_at IS NULL) = (checked_in_by_id IS NULL)");
+
                             t.HasCheckConstraint("ck_attendees_gender", "gender IS NULL OR gender IN ('Female', 'Male', 'Non-binary', 'Prefer to self-describe', 'Prefer not to say')");
 
                             t.HasCheckConstraint("ck_attendees_hear_about", "hear_about IS NULL OR hear_about IN ('Facebook', 'LinkedIn', 'Friend or colleague', 'School or organization', 'Sponsor', 'Other')");
@@ -1216,6 +1290,8 @@ namespace Htn.Infrastructure.Data.Migrations
                             t.HasCheckConstraint("ck_registrations_amounts", "subtotal >= 0 AND discount >= 0 AND discount <= subtotal AND total = subtotal - discount");
 
                             t.HasCheckConstraint("ck_registrations_cancelled", "(status = 'Cancelled') = (cancelled_at IS NOT NULL) AND (cancelled_at IS NULL) = (cancel_reason IS NULL)");
+
+                            t.HasCheckConstraint("ck_registrations_checked_in", "status <> 'CheckedIn' OR checked_in_at IS NOT NULL");
 
                             t.HasCheckConstraint("ck_registrations_consent", "char_length(consent_version) > 0");
 
@@ -1838,6 +1914,29 @@ namespace Htn.Infrastructure.Data.Migrations
                         .HasName("pk_user_tokens");
 
                     b.ToTable("user_tokens", (string)null);
+                });
+
+            modelBuilder.Entity("Htn.Domain.CheckIn.CheckInScan", b =>
+                {
+                    b.HasOne("Htn.Domain.Registrations.Attendee", null)
+                        .WithMany()
+                        .HasForeignKey("AttendeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_check_in_scans_attendees_attendee_id");
+
+                    b.HasOne("Htn.Domain.Events.Event", null)
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_check_in_scans_events_event_id");
+
+                    b.HasOne("Htn.Infrastructure.Identity.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("StaffUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_check_in_scans_users_staff_user_id");
                 });
 
             modelBuilder.Entity("Htn.Domain.Events.Event", b =>

@@ -33,17 +33,24 @@ public static class AuthRateLimiting
                 o.AddPolicy(policy, http => PerIp(policy, http, s => s.AuthPermitLimit, s => s.AuthWindowSeconds));
             foreach (var policy in PublicRateLimiting.Policies)
                 o.AddPolicy(policy, http => PerIp(policy, http, s => PublicRateLimiting.PermitLimit(policy, s), s => s.PublicWindowSeconds));
+            o.AddPolicy(CheckInRateLimiting.Scan, http => CheckInRateLimiting.PerUser(CheckInRateLimiting.Scan, http, s => s.CheckInPermitLimit));
+            o.AddPolicy(CheckInRateLimiting.Search, http => CheckInRateLimiting.PerUser(CheckInRateLimiting.Search, http, s => s.CheckInSearchPermitLimit));
         });
         return services;
+    }
+
+    internal static string ClientIp(HttpContext http)
+    {
+        var ip = http.Connection.RemoteIpAddress;
+        // Normalize IPv4-mapped IPv6 so one client can't get two buckets.
+        return ip is null ? "unknown" : (ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip).ToString();
     }
 
     private static RateLimitPartition<string> PerIp(
         string policy, HttpContext http, Func<RateLimitSettings, int> permits, Func<RateLimitSettings, int> windowSeconds)
     {
         var s = http.RequestServices.GetRequiredService<IOptions<RateLimitSettings>>().Value;
-        var ip = http.Connection.RemoteIpAddress;
-        // Normalize IPv4-mapped IPv6 so one client can't get two buckets.
-        var key = ip is null ? "unknown" : (ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip).ToString();
+        var key = ClientIp(http);
         return RateLimitPartition.GetFixedWindowLimiter($"{policy}|{key}", _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = Math.Max(1, permits(s)),
@@ -129,4 +136,28 @@ public static class PublicRateLimiting
         Register => s.PublicRegisterPermitLimit,
         _ => s.PublicProofPermitLimit,
     };
+}
+
+/// <summary>
+/// Per signed-in user fixed windows for the check-in desk (scan + manual share one bucket, search has its own), so one
+/// station can't hammer token checks or page through the attendee list. Anonymous requests (rejected with 401 later)
+/// fall back to a per-IP bucket.
+/// </summary>
+public static class CheckInRateLimiting
+{
+    public const string Scan = "checkin-scan";
+    public const string Search = "checkin-search";
+
+    internal static RateLimitPartition<string> PerUser(string policy, HttpContext http, Func<RateLimitSettings, int> permits)
+    {
+        var s = http.RequestServices.GetRequiredService<IOptions<RateLimitSettings>>().Value;
+        var userId = http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var key = userId is { Length: > 0 } ? "user:" + userId : "ip:" + AuthRateLimiting.ClientIp(http);
+        return RateLimitPartition.GetFixedWindowLimiter($"{policy}|{key}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = Math.Max(1, permits(s)),
+            Window = TimeSpan.FromSeconds(Math.Max(1, s.CheckInWindowSeconds)),
+            QueueLimit = 0,
+        });
+    }
 }

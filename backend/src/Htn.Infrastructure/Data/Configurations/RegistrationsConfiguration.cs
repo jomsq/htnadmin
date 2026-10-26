@@ -27,6 +27,7 @@ internal sealed class RegistrationConfiguration : IEntityTypeConfiguration<Regis
             t.HasCheckConstraint("ck_registrations_paid", "status NOT IN ('Paid', 'CheckedIn') OR paid_at IS NOT NULL");
             t.HasCheckConstraint("ck_registrations_deadline", "total = 0 OR deadline IS NOT NULL");
             t.HasCheckConstraint("ck_registrations_consent", "char_length(consent_version) > 0");
+            t.HasCheckConstraint("ck_registrations_checked_in", "status <> 'CheckedIn' OR checked_in_at IS NOT NULL");
             t.HasCheckConstraint("ck_registrations_manual_actor", "source = 'Public' OR created_by_id IS NOT NULL");
         });
         b.HasKey(r => r.Id);
@@ -76,6 +77,8 @@ internal sealed class AttendeeConfiguration : IEntityTypeConfiguration<Attendee>
             t.HasCheckConstraint("ck_attendees_hear_about", "hear_about IS NULL OR " + CheckConstraints.In("hear_about", [.. RegistrationForm.HearAbout]));
             t.HasCheckConstraint("ck_attendees_ticket_version", "ticket_version >= 1");
             t.HasCheckConstraint("ck_attendees_sort_order", $"sort_order BETWEEN 0 AND {TicketType.MaxGroupSize - 1}");
+            t.HasCheckConstraint("ck_attendees_checked_in",
+                "(checked_in_at IS NULL) = (checked_in_station IS NULL) AND (checked_in_at IS NULL) = (checked_in_by_id IS NULL)");
         });
         b.HasKey(a => a.Id);
         b.Property(a => a.Id).ValueGeneratedNever();
@@ -99,6 +102,9 @@ internal sealed class AttendeeConfiguration : IEntityTypeConfiguration<Attendee>
         b.HasIndex(a => new { a.RegistrationId, a.SortOrder }).IsUnique();
         // Desk lookup by participant ID across events (3C) and lower(email) for search / member matching: raw SQL in the migration.
         b.HasIndex(a => a.ParticipantId);
+        // Check-in stats: checked in per event and per station (3C). Member matching by lower(email) among checked-in
+        // attendees is a partial expression index in the CheckIn migration.
+        b.HasIndex(a => new { a.EventId, a.CheckedInStation }).HasFilter("checked_in_at IS NOT NULL");
         b.HasOne<Event>().WithMany().HasForeignKey(a => a.EventId).OnDelete(DeleteBehavior.Restrict);
     }
 }

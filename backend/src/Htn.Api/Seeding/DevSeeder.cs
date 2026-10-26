@@ -59,7 +59,7 @@ public static class DevSeeder
     {
         if (await db.People.AnyAsync(p => p.Email == email, ct)) return;
         var now = clock.GetUtcNow();
-        var person = Person.Create(first, null, last, email, level, position, now, actorId: null);
+        var person = Person.Create(first, null, last, email, level, position, now, actorId: null, reason: MemberRule.SeededReason);
         db.People.Add(person);
         await db.SaveChangesAsync(ct);
 

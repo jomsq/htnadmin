@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using Htn.Api.Auth;
 using Htn.Api.Common;
 using Htn.Api.Features.Auth;
+using Htn.Api.Features.CheckIn;
 using Htn.Api.Features.Events;
 using Htn.Api.Features.Organization;
 using Htn.Api.Features.Registrations;
@@ -146,6 +147,7 @@ app.MapVouchers();
 app.MapEventEmailSettings();
 app.MapRegistrations();
 app.MapPublicRegistration();
+app.MapCheckIn();
 
 var migrate = app.Configuration.GetValue("Database:MigrateOnStartup", app.Environment.IsDevelopment());
 if (migrate)

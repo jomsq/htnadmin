@@ -161,6 +161,12 @@ public sealed class DevSeedRegistrationsTests(HtnApiFactory factory) : IClassFix
         Assert.Contains(regs, r => r.Seats == 5);
         Assert.Equal(7, regs.Count);
         Assert.Empty(await factory.DbAsync(db => db.Outbox.AsNoTracking().Where(o => o.Type.StartsWith("email.")).ToListAsync()));
+
+        // Seeded Members predate the check-in rule: created through the exempt path, and history says so.
+        var paolo = await factory.DbAsync(db => db.People.AsNoTracking().SingleAsync(p => p.Email == "paolo@hackthenorth.ph"));
+        Assert.Equal(Htn.Domain.Organization.PersonLevel.Member, paolo.Level);
+        Assert.Equal(Htn.Domain.Organization.MemberRule.SeededReason, await factory.DbAsync(db => db.PersonHistory.AsNoTracking()
+            .Where(h => h.PersonId == paolo.Id && h.Kind == Htn.Domain.Organization.PersonHistoryKinds.Created).Select(h => h.Reason).SingleAsync()));
     }
 }
 

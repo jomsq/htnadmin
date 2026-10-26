@@ -36,6 +36,14 @@ public sealed class RateLimitSettings
     public int PublicProofPermitLimit { get; set; } = 20;
     public int PublicWindowSeconds { get; set; } = 60;
 
+    /// <summary>Check-in scans and manual check-ins per signed-in user, per window (a busy desk does about one every 3 s).</summary>
+    public int CheckInPermitLimit { get; set; } = 120;
+
+    /// <summary>Check-in desk searches per signed-in user, per window.</summary>
+    public int CheckInSearchPermitLimit { get; set; } = 120;
+
+    public int CheckInWindowSeconds { get; set; } = 60;
+
     /// <summary>Public registrations per normalized buyer email.</summary>
     public int RegisterPerEmailPermitLimit { get; set; } = 5;
     public int RegisterPerEmailWindowSeconds { get; set; } = 60 * 60;

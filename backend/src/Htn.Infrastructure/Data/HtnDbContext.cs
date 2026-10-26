@@ -1,4 +1,5 @@
 using Htn.Domain.Audit;
+using Htn.Domain.CheckIn;
 using Htn.Domain.Events;
 using Htn.Domain.Files;
 using Htn.Domain.Organization;
@@ -30,6 +31,7 @@ public sealed class HtnDbContext(DbContextOptions<HtnDbContext> options)
     public DbSet<Attendee> Attendees => Set<Attendee>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<PaymentProof> PaymentProofs => Set<PaymentProof>();
+    public DbSet<CheckInScan> CheckInScans => Set<CheckInScan>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<OutboxMessage> Outbox => Set<OutboxMessage>();
     public DbSet<AccountToken> AccountTokens => Set<AccountToken>();
@@ -65,7 +67,7 @@ public sealed class HtnDbContext(DbContextOptions<HtnDbContext> options)
         foreach (var entry in ChangeTracker.Entries())
         {
             if (entry.State is not (EntityState.Modified or EntityState.Deleted)) continue;
-            if (entry.Entity is AuditEntry or Domain.Organization.PersonHistory or PaymentProof)
+            if (entry.Entity is AuditEntry or Domain.Organization.PersonHistory or PaymentProof or CheckInScan)
                 throw new InvalidOperationException($"{entry.Entity.GetType().Name} is append-only.");
             if (entry.State == EntityState.Deleted && entry.Entity is Person)
                 throw new InvalidOperationException("People are deactivated, never deleted.");
