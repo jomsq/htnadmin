@@ -5,6 +5,7 @@ using Htn.Domain.Organization;
 using Htn.Infrastructure.Audit;
 using Htn.Infrastructure.Data;
 using Htn.Infrastructure.Identity;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -18,7 +19,8 @@ public sealed class UpdateFinanceRolesRequestValidator : AbstractValidator<Updat
 {
     public UpdateFinanceRolesRequestValidator()
     {
-        RuleFor(x => x.CfoPersonId).NotEqual(Guid.Empty).WithMessage("Choose a person.");
+        // There is always a CFO: it can be handed to someone else here, never cleared.
+        RuleFor(x => x.CfoPersonId).NotNull().WithMessage("Choose the CFO.").NotEqual(Guid.Empty).WithMessage("Choose the CFO.");
         RuleFor(x => x.AssistantPersonId).NotEqual(Guid.Empty).WithMessage("Choose a person.");
     }
 }
@@ -68,8 +70,19 @@ public static class FinanceRolesEndpoints
     }
 
     private static async Task<IResult> Update(
-        UpdateFinanceRolesRequest req, HtnDbContext db, IAuditLog audit, ICurrentUser me, CancellationToken ct)
+        UpdateFinanceRolesRequest req, HtnDbContext db, UserManager<AppUser> users, IAuditLog audit, ICurrentUser me, CancellationToken ct)
     {
+        var before = await Load(db, ct);
+
+        // Nobody appoints themselves: a caller may only keep a role they already hold.
+        if (me.PersonId is { } self)
+        {
+            if (req.CfoPersonId == self && before.Cfo?.Id != self)
+                return Problems.Result(StatusCodes.Status409Conflict, "You can't appoint yourself CFO. Ask another board member.", code: "self_change");
+            if (req.AssistantPersonId == self && before.Assistant?.Id != self)
+                return Problems.Result(StatusCodes.Status409Conflict, "You can't appoint yourself finance assistant.", code: "self_change");
+        }
+
         AppUser? cfo = null, assistant = null;
         if (req.CfoPersonId is { } cfoId)
         {
@@ -84,18 +97,22 @@ public static class FinanceRolesEndpoints
             assistant = user;
         }
 
-        var before = await Load(db, ct);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         try
         {
             // Clear first, in its own statement batch, so the single-holder unique indexes never see two holders.
             var current = await db.Users.Where(u => u.IsCfo || u.IsFinanceAssistant).ToListAsync(ct);
+            var lostRights = new List<AppUser>();
             foreach (var u in current)
             {
-                if (u.IsCfo && u.Id != cfo?.Id) u.IsCfo = false;
-                if (u.IsFinanceAssistant && u.Id != assistant?.Id) u.IsFinanceAssistant = false;
+                var lost = false;
+                if (u.IsCfo && u.Id != cfo?.Id) { u.IsCfo = false; lost = true; }
+                if (u.IsFinanceAssistant && u.Id != assistant?.Id) { u.IsFinanceAssistant = false; lost = true; }
+                if (lost) lostRights.Add(u);
             }
             await db.SaveChangesAsync(ct);
+            // Sessions of whoever lost finance rights end at the next stamp check instead of keeping the old claims.
+            foreach (var u in lostRights) await users.UpdateSecurityStampAsync(u);
 
             if (cfo is not null) cfo.IsCfo = true;
             if (assistant is not null) assistant.IsFinanceAssistant = true;

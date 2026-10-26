@@ -45,11 +45,28 @@ public sealed class StoredFile
     }
 }
 
+public static class StoredFilePurposes
+{
+    public const string LogoLight = "logo_light";
+    public const string LogoDark = "logo_dark";
+
+    /// <summary>Purposes that any signed-in user may download through <c>GET /api/files/{id}</c>.</summary>
+    public static readonly IReadOnlyList<string> PublicToMembers = [LogoLight, LogoDark];
+}
+
 public static class FileSignatures
 {
+    /// <summary>Largest width or height accepted for an uploaded image (keeps decode memory bounded for viewers).</summary>
+    public const int MaxImageDimension = 4096;
+
     private static ReadOnlySpan<byte> Png => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
     /// <summary>PNG signature followed by an IHDR chunk (the first chunk of every valid PNG).</summary>
     public static bool IsPng(ReadOnlySpan<byte> data) =>
         data.Length >= 33 && data[..8].SequenceEqual(Png) && data.Slice(12, 4).SequenceEqual("IHDR"u8);
+
+    /// <summary>Width and height from the IHDR chunk (big-endian, bytes 16–19 and 20–23). Call only after <see cref="IsPng"/>.</summary>
+    public static (uint Width, uint Height) PngSize(ReadOnlySpan<byte> data) =>
+        (System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.Slice(16, 4)),
+         System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.Slice(20, 4)));
 }

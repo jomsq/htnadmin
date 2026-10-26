@@ -293,6 +293,12 @@ namespace Htn.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(16)")
                         .HasColumnName("kind");
 
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer")
                         .HasColumnName("sort_order");
@@ -324,71 +330,6 @@ namespace Htn.Infrastructure.Data.Migrations
                             t.HasCheckConstraint("ck_positions_holder_since", "(holder_id IS NULL) = (holder_since IS NULL)");
 
                             t.HasCheckConstraint("ck_positions_kind", "kind IN ('BoardSeat', 'GoonPosition')");
-                        });
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("0192f0a0-0000-7000-8000-0000000b0001"),
-                            CreatedAt = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            IsActive = true,
-                            Kind = "BoardSeat",
-                            SortOrder = 1,
-                            Title = "Chairperson"
-                        },
-                        new
-                        {
-                            Id = new Guid("0192f0a0-0000-7000-8000-0000000b0002"),
-                            CreatedAt = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            IsActive = true,
-                            Kind = "BoardSeat",
-                            SortOrder = 2,
-                            Title = "Vice Chairperson"
-                        },
-                        new
-                        {
-                            Id = new Guid("0192f0a0-0000-7000-8000-0000000b0003"),
-                            CreatedAt = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            IsActive = true,
-                            Kind = "BoardSeat",
-                            SortOrder = 3,
-                            Title = "Treasurer"
-                        },
-                        new
-                        {
-                            Id = new Guid("0192f0a0-0000-7000-8000-0000000b0004"),
-                            CreatedAt = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            IsActive = true,
-                            Kind = "BoardSeat",
-                            SortOrder = 4,
-                            Title = "Corporate Secretary"
-                        },
-                        new
-                        {
-                            Id = new Guid("0192f0a0-0000-7000-8000-0000000b0005"),
-                            CreatedAt = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            IsActive = true,
-                            Kind = "BoardSeat",
-                            SortOrder = 5,
-                            Title = "Trustee"
-                        },
-                        new
-                        {
-                            Id = new Guid("0192f0a0-0000-7000-8000-0000000b0006"),
-                            CreatedAt = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            IsActive = true,
-                            Kind = "BoardSeat",
-                            SortOrder = 6,
-                            Title = "Trustee"
-                        },
-                        new
-                        {
-                            Id = new Guid("0192f0a0-0000-7000-8000-0000000b0007"),
-                            CreatedAt = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            IsActive = true,
-                            Kind = "BoardSeat",
-                            SortOrder = 7,
-                            Title = "Trustee"
                         });
                 });
 
@@ -610,22 +551,6 @@ namespace Htn.Infrastructure.Data.Migrations
                             t.HasCheckConstraint("ck_org_settings_presets", "preset_small >= 1 AND preset_small < preset_medium AND preset_medium < preset_large AND preset_large < preset_xl AND preset_xl <= 1000");
 
                             t.HasCheckConstraint("ck_org_settings_singleton", "id = 1");
-                        });
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1,
-                            AssistantMultiplier = 0.3m,
-                            BrandColor = "#B71C1C",
-                            CollabMultiplier = 0.7m,
-                            LeadMultiplier = 1.0m,
-                            PaymentDeadlineHours = 48,
-                            PresetLarge = 40,
-                            PresetMedium = 20,
-                            PresetSmall = 10,
-                            PresetXl = 80,
-                            RequireTaskApproval = true
                         });
                 });
 

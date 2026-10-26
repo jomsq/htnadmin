@@ -50,19 +50,14 @@ public static class PeopleEndpoints
             u != null && u.IsFinanceAssistant);
 
     /// <summary>
-    /// Data-minimized row for non-Board People.View callers: masked email, no account status or last sign-in.
-    /// Only the (non-sensitive) CFO / finance-assistant flags are read from users; the mask runs in the final
-    /// (client-side) projection.
+    /// Data-minimized row for non-Board People.View callers: masked email, no account status, last sign-in or finance
+    /// roles. The users table isn't read at all; the mask runs in the final (client-side) projection.
     /// </summary>
     private static IQueryable<PersonDto> ProjectLimited(HtnDbContext db, IQueryable<Person> people) =>
         from p in people
-        join u in db.Users on (Guid?)p.Id equals u.PersonId into us
-        from u in us.DefaultIfEmpty()
         select new PersonDto(
             p.Id, p.FirstName, p.MiddleName, p.LastName, EmailMask.Mask(p.Email), p.Level, p.Position, p.IsActive,
-            null, null, p.CreatedAt,
-            u != null && u.IsActive && u.IsCfo,
-            u != null && u.IsActive && u.IsFinanceAssistant);
+            null, null, p.CreatedAt, false, false);
 
     private static async Task<IResult> List(
         HttpContext http, HtnDbContext db, string? level, string? search, int? page, int? pageSize, CancellationToken ct)
@@ -338,7 +333,7 @@ public static class PeopleEndpoints
     }
 
     private static async Task<IResult> Promote(
-        Guid id, PromotePersonRequest req, HtnDbContext db, AccountProvisioning accounts, IAuditLog audit,
+        Guid id, PromotePersonRequest req, HtnDbContext db, UserManager<AppUser> users, AccountProvisioning accounts, IAuditLog audit,
         ICurrentUser me, TimeProvider clock, CancellationToken ct)
     {
         var person = await db.People.SingleOrDefaultAsync(p => p.Id == id, ct);
@@ -388,6 +383,10 @@ public static class PeopleEndpoints
             }
             user = login.User;
             invited = login.Invited;
+            // Losing Board, CFO or finance-assistant rights ends existing sessions at the next stamp check.
+            var lostRights = (from == PersonLevel.Board && to != PersonLevel.Board) || (before.isCfo && !user!.IsCfo)
+                             || (before.isFinanceAssistant && !user!.IsFinanceAssistant);
+            if (lostRights && !invited) await users.UpdateSecurityStampAsync(user!);
         }
         else if (user is { IsActive: true })
         {

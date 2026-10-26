@@ -100,3 +100,9 @@ public static class HostingSetup
             .ToArray();
     }
 }
+
+public static class HostingLimits
+{
+    /// <summary>Kestrel's global request body cap. Must stay above the 1 MB upload limit plus multipart overhead.</summary>
+    public const long MaxRequestBodyBytes = 2 * 1024 * 1024;
+}

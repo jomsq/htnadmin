@@ -3,8 +3,6 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-#pragma warning disable CA1814 // Prefer jagged arrays over multidimensional
-
 namespace Htn.Infrastructure.Data.Migrations
 {
     /// <inheritdoc />
@@ -54,7 +52,8 @@ namespace Htn.Infrastructure.Data.Migrations
                     is_active = table.Column<bool>(type: "boolean", nullable: false),
                     holder_id = table.Column<Guid>(type: "uuid", nullable: true),
                     holder_since = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -164,29 +163,67 @@ namespace Htn.Infrastructure.Data.Migrations
                         onDelete: ReferentialAction.Restrict);
                 });
 
-            migrationBuilder.InsertData(
-                table: "org_settings",
-                columns: new[] { "id", "assistant_multiplier", "brand_color", "collab_multiplier", "lead_multiplier", "logo_dark_file_id", "logo_light_file_id", "payment_deadline_hours", "preset_large", "preset_medium", "preset_small", "preset_xl", "require_task_approval", "updated_at", "updated_by_id" },
-                values: new object[] { 1, 0.3m, "#B71C1C", 0.7m, 1.0m, null, null, 48, 40, 20, 10, 80, true, null, null });
+            // Widen the history kinds. NOT VALID + VALIDATE: the ADD takes only a brief lock and the scan of existing
+            // rows runs under a weaker lock that doesn't block inserts.
+            migrationBuilder.Sql("""
+                ALTER TABLE person_history ADD CONSTRAINT ck_person_history_kind
+                    CHECK (kind IN ('created', 'level_changed', 'position_changed', 'deactivated', 'position_assigned', 'position_vacated')) NOT VALID;
+                ALTER TABLE person_history VALIDATE CONSTRAINT ck_person_history_kind;
+                """);
 
-            migrationBuilder.InsertData(
-                table: "positions",
-                columns: new[] { "id", "created_at", "holder_id", "holder_since", "is_active", "kind", "sort_order", "title" },
-                values: new object[,]
-                {
-                    { new Guid("0192f0a0-0000-7000-8000-0000000b0001"), new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), null, null, true, "BoardSeat", 1, "Chairperson" },
-                    { new Guid("0192f0a0-0000-7000-8000-0000000b0002"), new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), null, null, true, "BoardSeat", 2, "Vice Chairperson" },
-                    { new Guid("0192f0a0-0000-7000-8000-0000000b0003"), new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), null, null, true, "BoardSeat", 3, "Treasurer" },
-                    { new Guid("0192f0a0-0000-7000-8000-0000000b0004"), new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), null, null, true, "BoardSeat", 4, "Corporate Secretary" },
-                    { new Guid("0192f0a0-0000-7000-8000-0000000b0005"), new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), null, null, true, "BoardSeat", 5, "Trustee" },
-                    { new Guid("0192f0a0-0000-7000-8000-0000000b0006"), new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), null, null, true, "BoardSeat", 6, "Trustee" },
-                    { new Guid("0192f0a0-0000-7000-8000-0000000b0007"), new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), null, null, true, "BoardSeat", 7, "Trustee" }
-                });
+            // Seed data for every environment: the settings row (values = OrgSettings.Defaults()) and the seven Board of
+            // Trustees seats. Raw SQL rather than HasData so later model changes never generate update/delete seed ops.
+            migrationBuilder.Sql("""
+                INSERT INTO org_settings (id, lead_multiplier, collab_multiplier, assistant_multiplier,
+                                          preset_small, preset_medium, preset_large, preset_xl,
+                                          require_task_approval, brand_color, payment_deadline_hours)
+                VALUES (1, 1.0, 0.7, 0.3, 10, 20, 40, 80, TRUE, '#B71C1C', 48)
+                ON CONFLICT (id) DO NOTHING;
 
-            migrationBuilder.AddCheckConstraint(
-                name: "ck_person_history_kind",
-                table: "person_history",
-                sql: "kind IN ('created', 'level_changed', 'position_changed', 'deactivated', 'position_assigned', 'position_vacated')");
+                INSERT INTO positions (id, kind, title, sort_order, is_active, created_at) VALUES
+                    ('0192f0a0-0000-7000-8000-0000000b0001', 'BoardSeat', 'Chairperson',         1, TRUE, '2026-01-01T00:00:00Z'),
+                    ('0192f0a0-0000-7000-8000-0000000b0002', 'BoardSeat', 'Vice Chairperson',    2, TRUE, '2026-01-01T00:00:00Z'),
+                    ('0192f0a0-0000-7000-8000-0000000b0003', 'BoardSeat', 'Treasurer',           3, TRUE, '2026-01-01T00:00:00Z'),
+                    ('0192f0a0-0000-7000-8000-0000000b0004', 'BoardSeat', 'Corporate Secretary', 4, TRUE, '2026-01-01T00:00:00Z'),
+                    ('0192f0a0-0000-7000-8000-0000000b0005', 'BoardSeat', 'Trustee',             5, TRUE, '2026-01-01T00:00:00Z'),
+                    ('0192f0a0-0000-7000-8000-0000000b0006', 'BoardSeat', 'Trustee',             6, TRUE, '2026-01-01T00:00:00Z'),
+                    ('0192f0a0-0000-7000-8000-0000000b0007', 'BoardSeat', 'Trustee',             7, TRUE, '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;
+                """);
+
+            // Position terms are history: a row may only be updated once, to close an open term (ended_at set, the
+            // who/where/when columns unchanged). DELETE and TRUNCATE are rejected for every role, like audit_entries.
+            // None of the new tables are ever deleted from (void/deactivate instead), so DELETE/TRUNCATE are revoked too.
+            migrationBuilder.Sql("""
+                CREATE FUNCTION htn_position_assignment_close_only() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN
+                    IF TG_OP = 'UPDATE'
+                       AND OLD.ended_at IS NULL AND NEW.ended_at IS NOT NULL
+                       AND NEW.id = OLD.id
+                       AND NEW.position_id = OLD.position_id
+                       AND NEW.person_id = OLD.person_id
+                       AND NEW.started_at = OLD.started_at
+                       AND NEW.assigned_by_id IS NOT DISTINCT FROM OLD.assigned_by_id THEN
+                        RETURN NEW;
+                    END IF;
+                    RAISE EXCEPTION 'position_assignments only allows closing an open term once (% rejected)', TG_OP
+                        USING ERRCODE = 'insufficient_privilege';
+                END;
+                $$;
+                CREATE TRIGGER position_assignments_close_only BEFORE UPDATE OR DELETE ON position_assignments
+                    FOR EACH ROW EXECUTE FUNCTION htn_position_assignment_close_only();
+                CREATE TRIGGER position_assignments_no_truncate BEFORE TRUNCATE ON position_assignments
+                    FOR EACH STATEMENT EXECUTE FUNCTION htn_reject_change();
+
+                REVOKE DELETE, TRUNCATE ON positions, position_assignments, org_settings, payment_accounts, stored_files FROM PUBLIC;
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'htn_app') THEN
+                        REVOKE DELETE, TRUNCATE ON positions, position_assignments, org_settings, payment_accounts, stored_files FROM htn_app;
+                    END IF;
+                END
+                $$;
+                """);
 
             migrationBuilder.CreateIndex(
                 name: "ix_org_settings_logo_dark_file_id",
@@ -253,6 +290,14 @@ namespace Htn.Infrastructure.Data.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // WARNING: rolling this back drops positions, position terms, org settings, payment accounts and stored-file
+            // metadata. That data is lost (uploaded files stay on disk). Back up first.
+            migrationBuilder.Sql("""
+                DROP TRIGGER IF EXISTS position_assignments_no_truncate ON position_assignments;
+                DROP TRIGGER IF EXISTS position_assignments_close_only ON position_assignments;
+                DROP FUNCTION IF EXISTS htn_position_assignment_close_only();
+                """);
+
             migrationBuilder.DropTable(
                 name: "org_settings");
 
@@ -272,10 +317,12 @@ namespace Htn.Infrastructure.Data.Migrations
                 name: "ck_person_history_kind",
                 table: "person_history");
 
-            migrationBuilder.AddCheckConstraint(
-                name: "ck_person_history_kind",
-                table: "person_history",
-                sql: "kind IN ('created', 'level_changed', 'position_changed', 'deactivated')");
+            // person_history is append-only, so rows of the new kinds (position_assigned/vacated) stay. NOT VALID keeps the
+            // narrow constraint from failing on them while still checking every new row.
+            migrationBuilder.Sql("""
+                ALTER TABLE person_history ADD CONSTRAINT ck_person_history_kind
+                    CHECK (kind IN ('created', 'level_changed', 'position_changed', 'deactivated')) NOT VALID;
+                """);
         }
     }
 }

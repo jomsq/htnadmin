@@ -45,8 +45,15 @@ public sealed class AccountProvisioning(HtnDbContext db, UserManager<AppUser> us
         }
         else if (!user.IsActive)
         {
+            // A login that was switched off (e.g. demoted to Member) comes back as a fresh invite: the old password
+            // no longer works, old sessions end, and the person sets a new password from the emailed link.
             user.IsActive = true;
-            await users.UpdateAsync(user);
+            if (user.PasswordHash is not null)
+            {
+                var removed = await users.RemovePasswordAsync(user);
+                if (!removed.Succeeded) throw new InvalidOperationException("Could not remove password: " + string.Join("; ", removed.Errors.Select(e => e.Code)));
+            }
+            await users.UpdateSecurityStampAsync(user);
         }
 
         await SyncRoleAsync(user, person.Level);

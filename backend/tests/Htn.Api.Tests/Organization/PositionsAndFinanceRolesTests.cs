@@ -196,9 +196,13 @@ public sealed class PositionsAndFinanceRolesTests(HtnApiFactory factory) : IClas
         Assert.True(me.GetProperty("isCfo").GetBoolean());
         Assert.Contains("Finance.Post", me.GetProperty("policies").EnumerateArray().Select(p => p.GetString()));
 
-        // Clearing both is allowed.
-        var cleared = await ApiClient.JsonAsync(await board.PutAsync("/api/finance-roles", new { cfoPersonId = (Guid?)null, assistantPersonId = (Guid?)null }));
-        Assert.Equal(JsonValueKind.Null, cleared.GetProperty("cfo").ValueKind);
+        // The CFO can't be cleared (400 on cfoPersonId); the assistant can.
+        var noCfo = await board.PutAsync("/api/finance-roles", new { cfoPersonId = (Guid?)null, assistantPersonId = (Guid?)null });
+        Assert.Equal(HttpStatusCode.BadRequest, noCfo.StatusCode);
+        Assert.True((await ApiClient.JsonAsync(noCfo)).GetProperty("errors").TryGetProperty("cfoPersonId", out _));
+        Assert.Equal(ana.UserId, await factory.DbAsync(db => db.Users.Where(u => u.IsCfo).Select(u => (Guid?)u.Id).SingleAsync()));
+        var cleared = await ApiClient.JsonAsync(await board.PutAsync("/api/finance-roles", new { cfoPersonId = ana.PersonId, assistantPersonId = (Guid?)null }));
+        Assert.Equal(ana.PersonId, cleared.GetProperty("cfo").GetProperty("id").GetGuid());
         Assert.Equal(JsonValueKind.Null, cleared.GetProperty("assistant").ValueKind);
     }
 
@@ -211,8 +215,8 @@ public sealed class PositionsAndFinanceRolesTests(HtnApiFactory factory) : IClas
         var member = await factory.CreateUserAsync(PersonLevel.Member);
 
         Assert.Equal("wrong_level", await CodeAsync(await board.PutAsync("/api/finance-roles", new { cfoPersonId = goon.PersonId })));
-        Assert.Equal("wrong_level", await CodeAsync(await board.PutAsync("/api/finance-roles", new { assistantPersonId = otherBoard.PersonId })));
-        Assert.Equal("wrong_level", await CodeAsync(await board.PutAsync("/api/finance-roles", new { assistantPersonId = member.PersonId })));
+        Assert.Equal("wrong_level", await CodeAsync(await board.PutAsync("/api/finance-roles", new { cfoPersonId = otherBoard.PersonId, assistantPersonId = otherBoard.PersonId })));
+        Assert.Equal("wrong_level", await CodeAsync(await board.PutAsync("/api/finance-roles", new { cfoPersonId = otherBoard.PersonId, assistantPersonId = member.PersonId })));
         Assert.Equal("person_not_found", await CodeAsync(await board.PutAsync("/api/finance-roles", new { cfoPersonId = Guid.NewGuid() })));
 
         // A Board person without a login (e.g. made Board straight on the roster) can't be CFO.
@@ -221,5 +225,72 @@ public sealed class PositionsAndFinanceRolesTests(HtnApiFactory factory) : IClas
         var res = await board.PutAsync("/api/finance-roles", new { cfoPersonId = noLogin.PersonId });
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
         Assert.Equal("no_login", await CodeAsync(res));
+    }
+
+    private async Task<(HtnApiFactory.TestUser User, ApiClient Client)> BoardSessionAsync()
+    {
+        var user = await factory.CreateUserAsync(PersonLevel.Board);
+        var client = factory.NewClient();
+        await client.LoginOkAsync(user.Email, HtnApiFactory.Password);
+        return (user, client);
+    }
+
+    [Fact]
+    public async Task Board_cannot_appoint_themselves_cfo()
+    {
+        var (self, client) = await BoardSessionAsync();
+        var res = await client.PutAsync("/api/finance-roles", new { cfoPersonId = self.PersonId });
+        Assert.Equal(HttpStatusCode.Conflict, res.StatusCode);
+        Assert.Equal("self_change", await CodeAsync(res));
+        Assert.False(await factory.DbAsync(db => db.Users.Where(u => u.Id == self.UserId).Select(u => u.IsCfo).SingleAsync()));
+    }
+
+    [Fact]
+    public async Task Sitting_cfo_may_keep_the_role_while_changing_the_assistant()
+    {
+        var (self, selfClient) = await BoardSessionAsync();
+        var (_, admin) = await BoardSessionAsync();
+        Assert.Equal(HttpStatusCode.OK, (await admin.PutAsync("/api/finance-roles", new { cfoPersonId = self.PersonId })).StatusCode);
+
+        // Appointment rotates nothing for the new CFO, but sign in again to pick up the claim.
+        selfClient = factory.NewClient();
+        await selfClient.LoginOkAsync(self.Email, HtnApiFactory.Password);
+        var goon = await factory.CreateUserAsync(PersonLevel.Goon);
+        var res = await selfClient.PutAsync("/api/finance-roles", new { cfoPersonId = self.PersonId, assistantPersonId = goon.PersonId });
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        Assert.Equal(goon.PersonId, (await ApiClient.JsonAsync(res)).GetProperty("assistant").GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task Cfo_validator_requires_a_person()
+    {
+        var (_, admin) = await BoardSessionAsync();
+        var res = await admin.PutAsync("/api/finance-roles", new { assistantPersonId = (Guid?)null });
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.True((await ApiClient.JsonAsync(res)).GetProperty("errors").TryGetProperty("cfoPersonId", out _));
+    }
+
+    [Fact]
+    public async Task Losing_the_cfo_or_assistant_role_ends_existing_sessions()
+    {
+        var (_, admin) = await BoardSessionAsync();
+        var oldCfo = await factory.CreateUserAsync(PersonLevel.Board);
+        var oldAssistant = await factory.CreateUserAsync(PersonLevel.Goon);
+        Assert.Equal(HttpStatusCode.OK, (await admin.PutAsync("/api/finance-roles", new { cfoPersonId = oldCfo.PersonId, assistantPersonId = oldAssistant.PersonId })).StatusCode);
+
+        var cfoSession = factory.NewClient();
+        await cfoSession.LoginOkAsync(oldCfo.Email, HtnApiFactory.Password);
+        var assistantSession = factory.NewClient();
+        await assistantSession.LoginOkAsync(oldAssistant.Email, HtnApiFactory.Password);
+        Assert.True((await ApiClient.JsonAsync(await cfoSession.GetAsync("/api/auth/me"))).GetProperty("isCfo").GetBoolean());
+
+        var newCfo = await factory.CreateUserAsync(PersonLevel.Board);
+        Assert.Equal(HttpStatusCode.OK, (await admin.PutAsync("/api/finance-roles", new { cfoPersonId = newCfo.PersonId })).StatusCode);
+
+        // The test host validates the stamp on every request, so the stale sessions end right away.
+        Assert.Equal(HttpStatusCode.Unauthorized, (await cfoSession.GetAsync("/api/auth/me")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await assistantSession.GetAsync("/api/auth/me")).StatusCode);
+        // Someone whose rights didn't change keeps their session.
+        Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync("/api/auth/me")).StatusCode);
     }
 }

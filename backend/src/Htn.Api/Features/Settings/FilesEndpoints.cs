@@ -1,4 +1,5 @@
 using Htn.Api.Auth;
+using Htn.Domain.Files;
 using Htn.Infrastructure.Data;
 using Htn.Infrastructure.Storage;
 using Microsoft.EntityFrameworkCore;
@@ -11,14 +12,16 @@ public static class FilesEndpoints
     public static RouteGroupBuilder MapFiles(this IEndpointRouteBuilder app)
     {
         var g = app.MapGroup("/api/files").WithTags("Files");
-        // Signed-in users only. Stored files are logos today; they're needed for the theme before 2FA setup too.
-        g.MapGet("/{id:guid}", Get).RequireAuthorization().AllowWithoutTwoFactor();
+        // Any signed-in user, for logos only (the theme needs them, also before a Board user has set up 2FA).
+        g.MapGet("/{id:guid}", Get).RequireAuthorization(Policies.SettingsPersonal).AllowWithoutTwoFactor();
         return g;
     }
 
     private static async Task<IResult> Get(Guid id, HttpContext http, HtnDbContext db, IFileStorage storage, CancellationToken ct)
     {
-        var meta = await db.StoredFiles.AsNoTracking().SingleOrDefaultAsync(f => f.Id == id, ct);
+        // Only logo files are served here; anything else stored later needs its own endpoint and policy.
+        var meta = await db.StoredFiles.AsNoTracking()
+            .SingleOrDefaultAsync(f => f.Id == id && StoredFilePurposes.PublicToMembers.Contains(f.Purpose), ct);
         if (meta is null) return TypedResults.NotFound();
         var stream = await storage.OpenReadAsync(id, ct);
         if (stream is null) return TypedResults.NotFound();

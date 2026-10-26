@@ -6,17 +6,7 @@ namespace Htn.Infrastructure.Data.Configurations;
 
 internal sealed class PositionConfiguration : IEntityTypeConfiguration<Position>
 {
-    /// <summary>The seven Board of Trustees seats, seeded in every environment by the Organization_Settings migration.</summary>
-    public static readonly (Guid Id, string Title, int Sort)[] BoardSeats =
-    [
-        (new Guid("0192f0a0-0000-7000-8000-0000000b0001"), "Chairperson", 1),
-        (new Guid("0192f0a0-0000-7000-8000-0000000b0002"), "Vice Chairperson", 2),
-        (new Guid("0192f0a0-0000-7000-8000-0000000b0003"), "Treasurer", 3),
-        (new Guid("0192f0a0-0000-7000-8000-0000000b0004"), "Corporate Secretary", 4),
-        (new Guid("0192f0a0-0000-7000-8000-0000000b0005"), "Trustee", 5),
-        (new Guid("0192f0a0-0000-7000-8000-0000000b0006"), "Trustee", 6),
-        (new Guid("0192f0a0-0000-7000-8000-0000000b0007"), "Trustee", 7),
-    ];
+    public const string RowVersion = "RowVersion";
 
     public void Configure(EntityTypeBuilder<Position> b)
     {
@@ -30,6 +20,9 @@ internal sealed class PositionConfiguration : IEntityTypeConfiguration<Position>
         b.Property(p => p.Id).ValueGeneratedNever();
         b.Property(p => p.Kind).HasConversion<string>().HasMaxLength(16);
         b.Property(p => p.Title).HasMaxLength(Position.TitleMaxLength).IsRequired();
+        // Optimistic concurrency on Postgres' xmin system column: two admins assigning/vacating the same position at
+        // once means the second save fails (409 concurrent_change) instead of silently overwriting the holder.
+        b.Property<uint>(RowVersion).HasColumnName("xmin").HasColumnType("xid").IsRowVersion();
 
         b.HasIndex(p => new { p.Kind, p.SortOrder });
         b.HasIndex(p => p.HolderId, "ix_positions_holder_id");
@@ -38,18 +31,7 @@ internal sealed class PositionConfiguration : IEntityTypeConfiguration<Position>
             .HasFilter("kind = 'BoardSeat' AND holder_id IS NOT NULL");
         b.HasOne<Person>().WithMany().HasForeignKey(p => p.HolderId).OnDelete(DeleteBehavior.Restrict);
 
-        var seededAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
-        b.HasData(BoardSeats.Select(s => new
-        {
-            s.Id,
-            Kind = PositionKind.BoardSeat,
-            s.Title,
-            SortOrder = s.Sort,
-            IsActive = true,
-            HolderId = (Guid?)null,
-            HolderSince = (DateTimeOffset?)null,
-            CreatedAt = seededAt,
-        }));
+        // The seven board seats are seeded by raw SQL in the Organization_Settings migration (not HasData).
     }
 }
 

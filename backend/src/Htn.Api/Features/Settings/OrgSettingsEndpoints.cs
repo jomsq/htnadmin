@@ -19,7 +19,7 @@ public static class OrgSettingsEndpoints
     {
         var g = app.MapGroup("/api/settings").WithTags("Settings");
         // Any signed-in user: the app needs the brand color for its theme (also before a Board user has set up 2FA).
-        g.MapGet("/org", Get).RequireAuthorization().AllowWithoutTwoFactor();
+        g.MapGet("/org", Get).RequireAuthorization(Policies.SettingsPersonal).AllowWithoutTwoFactor();
         g.MapPut("/points", UpdatePoints).RequireAuthorization(Policies.SettingsManage).Validate<UpdatePointsRequest>();
         g.MapPut("/branding", UpdateBranding).RequireAuthorization(Policies.SettingsManage).Validate<UpdateBrandingRequest>();
         g.MapPost("/branding/logo", UploadLogo).RequireAuthorization(Policies.SettingsManage);
@@ -91,10 +91,16 @@ public static class OrgSettingsEndpoints
         // Trust the bytes, not the declared content type or file name.
         if (!FileSignatures.IsPng(file!.Bytes))
             return Problems.Field("file", "Upload a PNG image.", "unsupported_type");
+        var (width, height) = FileSignatures.PngSize(file.Bytes);
+        if (width == 0 || height == 0)
+            return Problems.Field("file", "Upload a PNG image.", "unsupported_type");
+        if (width > FileSignatures.MaxImageDimension || height > FileSignatures.MaxImageDimension)
+            return Problems.Field("file",
+                $"The logo can be at most {FileSignatures.MaxImageDimension}×{FileSignatures.MaxImageDimension} pixels.", "image_too_large");
 
         var now = clock.GetUtcNow();
         var stored = StoredFile.Create(PngContentType, file.Bytes.LongLength, Convert.ToHexStringLower(SHA256.HashData(file.Bytes)),
-            v == LogoVariant.Light ? "logo_light" : "logo_dark", file.FileName, now, me.Id);
+            v == LogoVariant.Light ? StoredFilePurposes.LogoLight : StoredFilePurposes.LogoDark, file.FileName, now, me.Id);
         await storage.SaveAsync(stored.Id, file.Bytes, ct);
 
         var s = await Load(db, ct);

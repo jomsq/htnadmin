@@ -108,4 +108,19 @@ public sealed class SettingsTests
         gif[1] = (byte)'G';
         Assert.False(FileSignatures.IsPng(gif));
     }
+
+    [Theory]
+    [InlineData("#B71C1C\n")]
+    [InlineData("#B71C1C\r\n")]
+    [InlineData("\n#B71C1C")]
+    public void Hex_check_rejects_surrounding_newlines(string value) => Assert.False(ColorContrast.IsHex(value));
+
+    [Fact]
+    public void Png_size_is_read_from_ihdr()
+    {
+        byte[] png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, (byte)'I', (byte)'H', (byte)'D', (byte)'R',
+            0, 0, 0x10, 0x00, 0, 0, 0x01, 0x2C, .. new byte[9]];
+        Assert.True(FileSignatures.IsPng(png));
+        Assert.Equal((4096u, 300u), FileSignatures.PngSize(png));
+    }
 }

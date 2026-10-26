@@ -139,4 +139,39 @@ public sealed class PaymentAccountsEndpointsTests(HtnApiFactory factory) : IClas
         var noKind = await board.PostAsync(Url, new { label = "x", accountName = "y", accountNumber = "1234" });
         Assert.True((await ApiClient.JsonAsync(noKind)).GetProperty("errors").TryGetProperty("kind", out _));
     }
+
+    [Fact]
+    public async Task Audit_records_whether_the_number_changed_even_with_the_same_last_four()
+    {
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+        var label = "GCash audit " + Guid.NewGuid().ToString("N")[..6];
+        var id = (await CreateAsync(board, GCash("0917 123 4567", label: label))).GetProperty("id").GetGuid();
+
+        Assert.Equal(HttpStatusCode.OK, (await board.PutAsync($"{Url}/{id}", GCash("0917 123 4567", label: label + " renamed"))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await board.PutAsync($"{Url}/{id}", GCash("0999 999 4567", label: label + " renamed"))).StatusCode);
+
+        var updates = await factory.DbAsync(db => db.AuditEntries.AsNoTracking()
+            .Where(a => a.EntityId == id.ToString() && a.Action == "payment_account.update").OrderBy(a => a.At).ToListAsync());
+        Assert.Equal(2, updates.Count);
+        JsonElement After(int i) => JsonDocument.Parse(updates[i].AfterJson!).RootElement.GetProperty("account");
+        Assert.False(After(0).GetProperty("accountNumberChanged").GetBoolean());
+        Assert.True(After(1).GetProperty("accountNumberChanged").GetBoolean());
+        Assert.Equal("•••• 4567", After(1).GetProperty("accountNumberMasked").GetString());
+        Assert.Equal("•••• 4567", JsonDocument.Parse(updates[1].BeforeJson!).RootElement.GetProperty("accountNumberMasked").GetString());
+        Assert.DoesNotContain("0999", updates[1].AfterJson!, StringComparison.Ordinal);
+
+        var create = await factory.DbAsync(db => db.AuditEntries.AsNoTracking().SingleAsync(a => a.EntityId == id.ToString() && a.Action == "payment_account.create"));
+        Assert.True(JsonDocument.Parse(create.AfterJson!).RootElement.GetProperty("account").GetProperty("accountNumberChanged").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("0917 123 4567\n")]
+    [InlineData("0917\n=1+1")]
+    public async Task Account_number_with_a_newline_is_rejected(string number)
+    {
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+        var res = await board.PostAsync(Url, GCash(number));
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.True((await ApiClient.JsonAsync(res)).GetProperty("errors").TryGetProperty("accountNumber", out _));
+    }
 }

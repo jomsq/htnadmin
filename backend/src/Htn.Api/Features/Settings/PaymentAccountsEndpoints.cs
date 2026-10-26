@@ -35,7 +35,7 @@ public sealed class PaymentAccountRequestValidator : AbstractValidator<PaymentAc
             .WithMessage("Enter the account number.");
         RuleFor(x => x.AccountNumber).MaximumLength(PaymentAccount.AccountNumberMaxLength)
             .WithMessage($"Use at most {PaymentAccount.AccountNumberMaxLength} characters.")
-            .Matches("^[0-9A-Za-z][0-9A-Za-z -]*$").When(x => !string.IsNullOrWhiteSpace(x.AccountNumber))
+            .Matches(@"^[0-9A-Za-z][0-9A-Za-z -]*\z").When(x => !string.IsNullOrWhiteSpace(x.AccountNumber))
             .WithMessage("Use digits, letters, spaces and dashes only.");
     }
 }
@@ -65,10 +65,19 @@ public static class PaymentAccountsEndpoints
     private static PaymentAccountDto ToDto(PaymentAccount a, bool board) => new(
         a.Id, a.Kind, a.Label, a.BankName, a.AccountName, board ? a.AccountNumber : null, a.AccountNumberMasked, a.IsDefault, a.IsActive);
 
-    /// <summary>What the audit log keeps: never the full account number.</summary>
+    /// <summary>
+    /// What the audit log keeps: never the full account number, only its last four and (in the after-state) whether
+    /// the number changed, so a swap that keeps the same last four still shows up.
+    /// </summary>
     private static object AuditView(PaymentAccount a) => new
     {
         a.Kind, a.Label, a.BankName, a.AccountName, accountNumberMasked = a.AccountNumberMasked, a.IsDefault, a.IsActive,
+    };
+
+    private static object AuditAfter(PaymentAccount a, bool accountNumberChanged) => new
+    {
+        a.Kind, a.Label, a.BankName, a.AccountName, accountNumberMasked = a.AccountNumberMasked, a.IsDefault, a.IsActive,
+        accountNumberChanged,
     };
 
     private static bool IsBoard(HttpContext http) => http.User.IsInRole(Roles.Board);
@@ -94,7 +103,7 @@ public static class PaymentAccountsEndpoints
             var previousDefault = req.IsDefault == true ? await ClearDefaultAsync(db, account.Id, ct) : null;
             if (req.IsDefault == true) account.SetDefault(true);
             audit.Record(me.Id, "payment_account.create", nameof(PaymentAccount), account.Id.ToString(),
-                after: new { account = AuditView(account), previousDefaultId = previousDefault });
+                after: new { account = AuditAfter(account, accountNumberChanged: account.AccountNumber is not null), previousDefaultId = previousDefault });
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
         }
@@ -115,6 +124,7 @@ public static class PaymentAccountsEndpoints
             return Problems.Result(StatusCodes.Status409Conflict, "This account is deactivated.", code: "account_deactivated");
 
         var before = AuditView(account);
+        var previousNumber = account.AccountNumber;
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         try
         {
@@ -130,7 +140,11 @@ public static class PaymentAccountsEndpoints
                 account.SetDefault(false);
             }
             audit.Record(me.Id, "payment_account.update", nameof(PaymentAccount), account.Id.ToString(),
-                before, new { account = AuditView(account), previousDefaultId = previousDefault });
+                before, new
+                {
+                    account = AuditAfter(account, accountNumberChanged: !string.Equals(previousNumber, account.AccountNumber, StringComparison.Ordinal)),
+                    previousDefaultId = previousDefault,
+                });
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
         }
@@ -153,7 +167,8 @@ public static class PaymentAccountsEndpoints
         var before = AuditView(account);
         var reason = req.Reason.Trim();
         account.Deactivate(reason, clock.GetUtcNow());
-        audit.Record(me.Id, "payment_account.deactivate", nameof(PaymentAccount), account.Id.ToString(), before, AuditView(account), reason);
+        audit.Record(me.Id, "payment_account.deactivate", nameof(PaymentAccount), account.Id.ToString(), before,
+            AuditAfter(account, accountNumberChanged: false), reason);
         await db.SaveChangesAsync(ct);
         return TypedResults.NoContent();
     }

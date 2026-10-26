@@ -9,7 +9,8 @@ public static partial class ColorContrast
     /// <summary>WCAG AA for normal text.</summary>
     public const double MinimumAgainstWhite = 4.5;
 
-    [GeneratedRegex("^#[0-9A-Fa-f]{6}$")]
+    // \z, not $: "$" also matches before a trailing newline, so "#B71C1C\n" would pass.
+    [GeneratedRegex(@"^#[0-9A-Fa-f]{6}\z")]
     private static partial Regex HexPattern();
 
     public static bool IsHex(string? value) => value is not null && HexPattern().IsMatch(value);

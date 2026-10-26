@@ -31,21 +31,7 @@ internal sealed class OrgSettingsConfiguration : IEntityTypeConfiguration<OrgSet
         b.HasOne<StoredFile>().WithMany().HasForeignKey(s => s.LogoLightFileId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<StoredFile>().WithMany().HasForeignKey(s => s.LogoDarkFileId).OnDelete(DeleteBehavior.Restrict);
 
-        var d = OrgSettings.Defaults();
-        b.HasData(new
-        {
-            d.Id,
-            d.LeadMultiplier,
-            d.CollabMultiplier,
-            d.AssistantMultiplier,
-            d.PresetSmall,
-            d.PresetMedium,
-            d.PresetLarge,
-            d.PresetXl,
-            d.RequireTaskApproval,
-            d.BrandColor,
-            d.PaymentDeadlineHours,
-        });
+        // The single row is seeded by raw SQL in the Organization_Settings migration (values = OrgSettings.Defaults()).
     }
 }
 

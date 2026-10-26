@@ -32,9 +32,14 @@ HostingSetup.EnsureEmailConfigured(builder.Configuration, builder.Environment);
 // See HostingSetup.ConfigureForwardedHeaders and the README for ForwardedHeaders:KnownProxies / KnownNetworks.
 builder.Services.Configure<ForwardedHeadersOptions>(o => HostingSetup.ConfigureForwardedHeaders(o, builder.Configuration));
 
+// ---- Request size ----
+// 2 MB for every request: the largest legitimate body is a 1 MB upload (logo or roster CSV) plus multipart overhead.
+builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = HostingLimits.MaxRequestBodyBytes);
+
 // ---- Problem details, JSON ----
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
+builder.Services.AddExceptionHandler<ConcurrencyExceptionHandler>();
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 // ---- Identity + cookie auth ----

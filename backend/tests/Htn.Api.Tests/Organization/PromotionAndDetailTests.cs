@@ -132,7 +132,8 @@ public sealed class PromotionAndDetailTests(HtnApiFactory factory) : IClassFixtu
         var goon = await factory.CreateUserAsync(PersonLevel.Goon);
         var positionId = await CreateGoonPositionAsync(board, "Head of Demotion " + Guid.NewGuid().ToString("N")[..6]);
         Assert.Equal(HttpStatusCode.OK, (await board.PostAsync($"/api/positions/{positionId}/assign", new { personId = goon.PersonId })).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await board.PutAsync("/api/finance-roles", new { cfoPersonId = (Guid?)null, assistantPersonId = goon.PersonId })).StatusCode);
+        var cfo = await factory.CreateUserAsync(PersonLevel.Board);
+        Assert.Equal(HttpStatusCode.OK, (await board.PutAsync("/api/finance-roles", new { cfoPersonId = cfo.PersonId, assistantPersonId = goon.PersonId })).StatusCode);
 
         var res = await board.PostAsync($"/api/people/{goon.PersonId}/promote", new { toLevel = "Member", reason = "Moved abroad" });
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
@@ -276,7 +277,7 @@ public sealed class PromotionAndDetailTests(HtnApiFactory factory) : IClassFixtu
     }
 
     [Fact]
-    public async Task List_rows_carry_finance_flags_for_everyone()
+    public async Task List_rows_carry_finance_flags_for_board_only()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
         var cfo = await factory.CreateUserAsync(PersonLevel.Board);
@@ -284,9 +285,57 @@ public sealed class PromotionAndDetailTests(HtnApiFactory factory) : IClassFixtu
         await factory.DbAsync(db => db.People.Where(p => p.Id == cfo.PersonId).ExecuteUpdateAsync(u => u.SetProperty(p => p.LastName, tag)));
         Assert.Equal(HttpStatusCode.OK, (await board.PutAsync("/api/finance-roles", new { cfoPersonId = cfo.PersonId })).StatusCode);
 
+        var boardItem = (await ApiClient.JsonAsync(await board.GetAsync($"/api/people?search={tag}"))).GetProperty("items")[0];
+        Assert.True(boardItem.GetProperty("isCfo").GetBoolean());
+
+        // Non-board callers never learn who holds finance roles (list or detail).
         var goon = await factory.SignedInAsync(PersonLevel.Goon);
         var item = (await ApiClient.JsonAsync(await goon.GetAsync($"/api/people?search={tag}"))).GetProperty("items")[0];
-        Assert.True(item.GetProperty("isCfo").GetBoolean());
+        Assert.False(item.GetProperty("isCfo").GetBoolean());
         Assert.False(item.GetProperty("isFinanceAssistant").GetBoolean());
+        var detail = await ApiClient.JsonAsync(await goon.GetAsync($"/api/people/{cfo.PersonId}"));
+        Assert.False(detail.GetProperty("person").GetProperty("isCfo").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Re_enabled_login_gets_a_fresh_invite_and_the_old_password_stops_working()
+    {
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+        var goon = await factory.CreateUserAsync(PersonLevel.Goon);
+        var stampBefore = await factory.DbAsync(db => db.Users.Where(u => u.Id == goon.UserId).Select(u => u.SecurityStamp).SingleAsync());
+
+        Assert.Equal(HttpStatusCode.OK, (await board.PostAsync($"/api/people/{goon.PersonId}/promote", new { toLevel = "Member", reason = "Took a break" })).StatusCode);
+        var back = await board.PostAsync($"/api/people/{goon.PersonId}/promote", new { toLevel = "Apprentice" });
+        Assert.Equal(HttpStatusCode.OK, back.StatusCode);
+        Assert.Equal("InvitePending", (await ApiClient.JsonAsync(back)).GetProperty("accountStatus").GetString());
+
+        var user = await factory.DbAsync(db => db.Users.AsNoTracking().SingleAsync(u => u.Id == goon.UserId));
+        Assert.True(user.IsActive);
+        Assert.Null(user.PasswordHash);
+        Assert.NotEqual(stampBefore, user.SecurityStamp);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await factory.NewClient().LoginAsync(goon.Email, HtnApiFactory.Password)).StatusCode);
+
+        await factory.ProcessOutboxAsync();
+        var token = factory.Emails.LastToken(goon.Email, "invite");
+        Assert.Equal(HttpStatusCode.OK, (await factory.NewClient().PostAsync("/api/auth/invite/accept", new { token, password = "back-again-password-1" })).StatusCode);
+        await factory.NewClient().LoginOkAsync(goon.Email, "back-again-password-1");
+    }
+
+    [Fact]
+    public async Task Leaving_the_board_ends_existing_sessions()
+    {
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+        var trustee = await factory.CreateUserAsync(PersonLevel.Board);
+        var session = factory.NewClient();
+        await session.LoginOkAsync(trustee.Email, HtnApiFactory.Password);
+        Assert.Equal(HttpStatusCode.OK, (await session.GetAsync("/api/finance-roles")).StatusCode);
+
+        Assert.Equal(HttpStatusCode.OK, (await board.PostAsync($"/api/people/{trustee.PersonId}/promote", new { toLevel = "Goon", reason = "Term ended" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await session.GetAsync("/api/finance-roles")).StatusCode);
+
+        // A fresh sign-in works, with Goon rights only.
+        var again = factory.NewClient();
+        await again.LoginOkAsync(trustee.Email, HtnApiFactory.Password);
+        Assert.Equal(HttpStatusCode.Forbidden, (await again.GetAsync("/api/finance-roles")).StatusCode);
     }
 }

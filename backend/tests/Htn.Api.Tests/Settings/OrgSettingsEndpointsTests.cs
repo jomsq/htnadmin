@@ -3,6 +3,7 @@ using System.Text.Json;
 using Htn.Api.Tests.Infrastructure;
 using Htn.Domain.Organization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Htn.Api.Tests.Settings;
 
@@ -215,6 +216,85 @@ public sealed class OrgSettingsEndpointsTests(HtnApiFactory factory) : IClassFix
             var gated = await board.PutAsync("/api/settings/points", Points());
             Assert.Equal(HttpStatusCode.Forbidden, gated.StatusCode);
             Assert.Equal("2fa_required", (await ApiClient.JsonAsync(gated)).GetProperty("code").GetString());
+        }
+        finally
+        {
+            await ((IAsyncLifetime)strict).DisposeAsync();
+        }
+    }
+
+    private static byte[] PngWithSize(uint width, uint height)
+    {
+        var png = (byte[])Png.Clone();
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(png.AsSpan(16, 4), width);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(png.AsSpan(20, 4), height);
+        return png;
+    }
+
+    [Theory]
+    [InlineData(4097u, 1u)]
+    [InlineData(1u, 5000u)]
+    public async Task Png_larger_than_4096_pixels_is_rejected(uint width, uint height)
+    {
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+        var res = await board.PostFileAsync("/api/settings/branding/logo?variant=light", PngWithSize(width, height), "huge.png", "image/png");
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.Equal("image_too_large", (await ApiClient.JsonAsync(res)).GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task Png_of_exactly_4096_pixels_is_accepted()
+    {
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+        var res = await board.PostFileAsync("/api/settings/branding/logo?variant=dark", PngWithSize(4096, 4096), "max.png", "image/png");
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("#0D47A1\n")]
+    [InlineData("#0D47A1\r\n")]
+    [InlineData(" #0D47A1")]
+    public async Task Brand_color_with_trailing_or_leading_junk_is_rejected(string color)
+    {
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+        var res = await board.PutAsync("/api/settings/branding", new { brandColor = color, paymentDeadlineHours = 48 });
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.True((await ApiClient.JsonAsync(res)).GetProperty("errors").TryGetProperty("brandColor", out _));
+    }
+
+    private async Task<Guid> StoreFileAsync(HtnApiFactory host, string purpose)
+    {
+        await using var scope = host.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<Htn.Infrastructure.Data.HtnDbContext>();
+        var storage = scope.ServiceProvider.GetRequiredService<Htn.Infrastructure.Storage.IFileStorage>();
+        var file = Htn.Domain.Files.StoredFile.Create("image/png", Png.Length,
+            Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Png)), purpose, "x.png", DateTimeOffset.UtcNow, null);
+        await storage.SaveAsync(file.Id, Png, CancellationToken.None);
+        db.StoredFiles.Add(file);
+        await db.SaveChangesAsync();
+        return file.Id;
+    }
+
+    [Fact]
+    public async Task Files_endpoint_serves_logos_only()
+    {
+        var other = await StoreFileAsync(factory, "receipt");
+        var logo = await StoreFileAsync(factory, "logo_dark"); // not logo_light: another test counts those
+        var goon = await factory.SignedInAsync(PersonLevel.Goon);
+        Assert.Equal(HttpStatusCode.NotFound, (await goon.GetAsync($"/api/files/{other}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await goon.GetAsync($"/api/files/{logo}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Board_without_2fa_can_still_load_logo_files()
+    {
+        var strict = new Board2faApiFactory();
+        await strict.InitializeAsync();
+        try
+        {
+            var logo = await StoreFileAsync(strict, "logo_dark");
+            var board = await strict.SignedInAsync(PersonLevel.Board);
+            Assert.Equal(HttpStatusCode.OK, (await board.GetAsync($"/api/files/{logo}")).StatusCode);
         }
         finally
         {

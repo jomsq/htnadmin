@@ -21,15 +21,20 @@ public sealed class AntiforgeryValidationMiddleware(RequestDelegate next, IAntif
             var meta = context.GetEndpoint()?.Metadata.GetMetadata<IAntiforgeryMetadata>();
             if (meta is not { RequiresValidation: false })
             {
+                // No header: reject before ValidateRequestAsync, which would read (and buffer) a form body to look
+                // for a form token. The SPA always sends the header, so the body is never needed for this check.
+                if (string.IsNullOrWhiteSpace(context.Request.Headers[HeaderName]))
+                {
+                    await RejectAsync(context);
+                    return;
+                }
                 try
                 {
                     await antiforgery.ValidateRequestAsync(context);
                 }
                 catch (AntiforgeryValidationException)
                 {
-                    await Problems.WriteAsync(context, StatusCodes.Status400BadRequest,
-                        "Security token missing or invalid",
-                        "Refresh the page and try again.", Code);
+                    await RejectAsync(context);
                     return;
                 }
             }
@@ -37,4 +42,9 @@ public sealed class AntiforgeryValidationMiddleware(RequestDelegate next, IAntif
 
         await next(context);
     }
+
+    private static Task RejectAsync(HttpContext context) =>
+        Problems.WriteAsync(context, StatusCodes.Status400BadRequest,
+            "Security token missing or invalid",
+            "Refresh the page and try again.", Code);
 }
