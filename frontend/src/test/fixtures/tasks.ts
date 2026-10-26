@@ -145,6 +145,9 @@ export const taskDetail = (over: Json = {}) => ({
   canApprove: true,
   canComment: true,
   needsOtherApprover: false,
+  canReopen: false,
+  canArchive: true,
+  canRestore: false,
   assignees: [
     { id: 'a-1', personId: 'p-alex', volunteerId: null, name: 'Alex Reyes', initials: 'AR', role: 'Lead', multiplier: 1, points: 40, isVolunteer: false },
     { id: 'a-2', personId: 'p-mika', volunteerId: null, name: 'Mika Soriano', initials: 'MS', role: 'Collab', multiplier: 0.7, points: 28, isVolunteer: false },

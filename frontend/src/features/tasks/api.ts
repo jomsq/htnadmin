@@ -170,6 +170,11 @@ export function useReopenTaskMutation(taskId: string) {
   )
 }
 
+/** Puts an archived card back on the board; it answers with the detail, so no reason is needed. */
+export function useRestoreTaskMutation(taskId: string) {
+  return useDetailMutation(taskId, () => api(`${taskPath(taskId)}/restore`, taskDetailSchema, { method: 'POST' }))
+}
+
 /** Archiving takes the card off the board (204, no detail back). Refused while the task holds live awards. */
 export function useArchiveTaskMutation(taskId: string) {
   const queryClient = useQueryClient()

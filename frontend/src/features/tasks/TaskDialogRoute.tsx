@@ -122,6 +122,13 @@ function TaskDialog({ task, onClose }: { task: TaskDetail; onClose: () => void }
             {task.isArchived ? <Badge color="gray">Archived</Badge> : null}
           </div>
 
+          {task.isArchived ? (
+            <Alert tone="gray">
+              This task is archived, so it is off the board and read only.
+              {task.archiveReason?.trim() ? <> Reason: {task.archiveReason.trim()}</> : null}
+            </Alert>
+          ) : null}
+
           {moveError ? (
             <Alert tone="red" live="alert">
               {moveError}

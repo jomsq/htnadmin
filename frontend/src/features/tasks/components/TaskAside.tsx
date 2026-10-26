@@ -7,7 +7,7 @@ import { Stepper } from '@/components/ui/Stepper'
 import { CloseIcon, LockIcon } from '@/components/ui/icons'
 import { useToast } from '@/components/ui/toast-context'
 import { formatEventDay } from '@/features/events/format'
-import { useApproveTaskMutation, useRemoveAssigneeMutation, useUpdateTaskMutation } from '../api'
+import { useApproveTaskMutation, useRemoveAssigneeMutation, useRestoreTaskMutation, useUpdateTaskMutation } from '../api'
 import { formatMultiplier, formatPoints, projectedPoints, type TaskDetail } from '../schemas'
 import { AddAssigneeDialog } from './AddAssigneeDialog'
 import { ArchiveDialog } from './ArchiveDialog'
@@ -21,6 +21,7 @@ export function TaskAside({ task, onArchived }: { task: TaskDetail; onArchived?:
   const update = useUpdateTaskMutation(task.id)
   const approve = useApproveTaskMutation(task.id)
   const removeAssignee = useRemoveAssigneeMutation(task.id)
+  const restore = useRestoreTaskMutation(task.id)
   // Local draft of the base points; null means "the saved value".
   const [draft, setDraft] = useState<number | null>(null)
   const base = draft ?? task.basePoints
@@ -172,12 +173,25 @@ export function TaskAside({ task, onArchived }: { task: TaskDetail; onArchived?:
         </Alert>
       ) : null}
 
-      {task.status === 'Done' ? (
-        task.canApprove ? (
-          <Button variant="danger" size="lg" onClick={() => setReopenOpen(true)}>
-            Reopen
-          </Button>
-        ) : null
+      {task.canRestore ? (
+        <Button
+          size="lg"
+          onClick={() =>
+            restore.mutate(undefined, {
+              onSuccess: () => toast({ tone: 'success', title: `${task.reference} is back on the board.` }),
+              onError: (e) => setActionError(errorMessage(e)),
+            })
+          }
+          loading={restore.isPending}
+        >
+          Restore to the board
+        </Button>
+      ) : null}
+
+      {task.canReopen ? (
+        <Button variant="danger" size="lg" onClick={() => setReopenOpen(true)}>
+          Reopen
+        </Button>
       ) : task.status === 'Review' && (task.canApprove || task.needsOtherApprover) ? (
         <div className="flex flex-col gap-2">
           <Button
@@ -201,12 +215,12 @@ export function TaskAside({ task, onArchived }: { task: TaskDetail; onArchived?:
         <Alert id={approverNoteId} tone="yellow">
           {NEEDS_OTHER_APPROVER_MESSAGE}
         </Alert>
-      ) : task.requireTaskApproval && !task.canApprove ? (
+      ) : task.requireTaskApproval && !task.canApprove && !task.isArchived && task.status !== 'Done' ? (
         <Alert tone="gray">Only the committee lead or an admin can finish a task.</Alert>
       ) : null}
 
-      {/* Archiving needs manage rights: canEdit says so on a live card, canApprove on a Done one. */}
-      {task.canEdit || (task.status === 'Done' && task.canApprove) ? (
+      {/* False while the card still holds live awards: it has to be reopened first, which reverses them. */}
+      {task.canArchive ? (
         <Button variant="ghost" onClick={() => setArchiveOpen(true)}>
           Archive task
         </Button>

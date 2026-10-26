@@ -112,7 +112,15 @@ describe('Task detail dialog', () => {
     server.use(
       http.post('/api/tasks/t-floorplan/approve', () => {
         approved++
-        state.task = taskDetail({ status: 'Done', approvedAt: '2026-10-26T10:00:00+08:00', approvedByName: 'Alex Reyes' })
+        state.task = taskDetail({
+          status: 'Done',
+          approvedAt: '2026-10-26T10:00:00+08:00',
+          approvedByName: 'Alex Reyes',
+          canEdit: false,
+          canApprove: false,
+          canReopen: true,
+          canArchive: false,
+        })
         return HttpResponse.json(state.task)
       }),
     )
@@ -152,22 +160,105 @@ describe('Task detail dialog', () => {
     expect(approved).toBe(0)
   })
 
-  it('refuses to archive a done task that still holds live awards', async () => {
+  it('offers only Reopen on a done task with live awards, and Archive once it is reopened', async () => {
     signInAs(boardMe)
-    mockTask(taskDetail({ status: 'Done', canEdit: false, approvedAt: '2026-10-20T10:00:00+08:00', approvedByName: 'Mika Soriano' }))
-    server.use(http.post('/api/tasks/t-floorplan/archive', () => problem(409, 'Reopen first', 'reopen_first')))
+    // canArchive is false while the awards are live: archiving would leave the points on the leaderboard.
+    const state = mockTask(
+      taskDetail({
+        status: 'Done',
+        approvedAt: '2026-10-20T10:00:00+08:00',
+        approvedByName: 'Mika Soriano',
+        canEdit: false,
+        canApprove: false,
+        canReopen: true,
+        canArchive: false,
+      }),
+    )
+    server.use(
+      http.post('/api/tasks/t-floorplan/reopen', () => {
+        state.task = taskDetail({ status: 'Review', canReopen: false, canArchive: true })
+        return HttpResponse.json(state.task)
+      }),
+    )
     const { user } = renderDialog()
 
-    await openDialog()
-    await user.click(screen.getByRole('button', { name: 'Archive task' }))
-    const confirm = await screen.findByRole('alertdialog', { name: /Archive HTN-142/ })
+    const panel = await openDialog()
+    expect(within(panel).getByRole('button', { name: 'Reopen' })).toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: 'Archive task' })).not.toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: /Approve & mark done/ })).not.toBeInTheDocument()
 
-    await user.type(within(confirm).getByLabelText('Reason'), 'Duplicate of HTN-180.')
-    await user.click(within(confirm).getByRole('button', { name: 'Archive task' }))
+    await user.click(within(panel).getByRole('button', { name: 'Reopen' }))
+    const confirm = await screen.findByRole('alertdialog', { name: /Reopen HTN-142/ })
+    await user.type(within(confirm).getByLabelText('Reason'), 'Approved by mistake.')
+    await user.click(within(confirm).getByRole('button', { name: 'Reopen task' }))
 
-    expect(await within(confirm).findByText('This task still has live points awards. Reopen it first.')).toBeInTheDocument()
-    // The dialog stays open so the reason is not lost.
-    expect(within(confirm).getByLabelText('Reason')).toHaveValue('Duplicate of HTN-180.')
+    // The awards are reversed, so the card can now be archived.
+    expect(await screen.findByRole('button', { name: 'Archive task' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reopen' })).not.toBeInTheDocument()
+  })
+
+  it('hides Reopen, Archive and Restore from someone who only works on the task', async () => {
+    signInAs(boardMe)
+    mockTask(
+      taskDetail({
+        status: 'Done',
+        approvedAt: '2026-10-20T10:00:00+08:00',
+        approvedByName: 'Mika Soriano',
+        canEdit: false,
+        canWork: false,
+        canApprove: false,
+        canReopen: false,
+        canArchive: false,
+        canRestore: false,
+      }),
+    )
+    renderDialog()
+
+    const panel = await openDialog()
+    expect(within(panel).queryByRole('button', { name: 'Reopen' })).not.toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: 'Archive task' })).not.toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: /Restore/ })).not.toBeInTheDocument()
+  })
+
+  it('reads as archived and restores the task to the board', async () => {
+    signInAs(boardMe)
+    const state = mockTask(
+      taskDetail({
+        status: 'ToDo',
+        isArchived: true,
+        archiveReason: 'Duplicate of HTN-180.',
+        canEdit: false,
+        canWork: false,
+        canApprove: false,
+        canComment: false,
+        canReopen: false,
+        canArchive: false,
+        canRestore: true,
+      }),
+    )
+    let restored = 0
+    server.use(
+      http.post('/api/tasks/t-floorplan/restore', () => {
+        restored++
+        state.task = taskDetail({ status: 'ToDo' })
+        return HttpResponse.json(state.task)
+      }),
+    )
+    const { user } = renderDialog()
+
+    const panel = await openDialog()
+    expect(within(panel).getByText('Archived')).toBeInTheDocument()
+    expect(within(panel).getByText(/This task is archived, so it is off the board and read only\./)).toBeInTheDocument()
+    expect(within(panel).getByText(/Reason: Duplicate of HTN-180\./)).toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: 'Archive task' })).not.toBeInTheDocument()
+    expect(within(panel).queryByLabelText('Write a comment')).not.toBeInTheDocument()
+
+    await user.click(within(panel).getByRole('button', { name: 'Restore to the board' }))
+
+    await waitFor(() => expect(restored).toBe(1))
+    expect(await screen.findByRole('button', { name: 'Archive task' })).toBeInTheDocument()
+    expect(screen.queryByText(/This task is archived/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Restore to the board' })).not.toBeInTheDocument()
   })
 
   it('shows a refused mention on the comment field instead of a bare toast', async () => {
@@ -199,7 +290,17 @@ describe('Task detail dialog', () => {
 
   it('requires a reason to reopen a done task', async () => {
     signInAs(boardMe)
-    mockTask(taskDetail({ status: 'Done', approvedAt: '2026-10-20T10:00:00+08:00', approvedByName: 'Mika Soriano' }))
+    mockTask(
+      taskDetail({
+        status: 'Done',
+        approvedAt: '2026-10-20T10:00:00+08:00',
+        approvedByName: 'Mika Soriano',
+        canEdit: false,
+        canApprove: false,
+        canReopen: true,
+        canArchive: false,
+      }),
+    )
     const bodies: Json[] = []
     server.use(
       http.post('/api/tasks/t-floorplan/reopen', async ({ request }) => {

@@ -179,6 +179,12 @@ export const taskDetailSchema = z.object({
    * nobody signs off their own work. Another committee lead or a board member has to approve it.
    */
   needsOtherApprover: z.boolean().default(false),
+  /** Manage rights on a Done, not archived task: the approval can be undone and the awards reversed. */
+  canReopen: z.boolean().default(false),
+  /** Manage rights on a live task that holds no live awards (a card with awards must be reopened first). */
+  canArchive: z.boolean().default(false),
+  /** Manage rights on an archived task: it can go back on the board. */
+  canRestore: z.boolean().default(false),
   assignees: z.array(taskAssigneeSchema).default([]),
   checklist: z.array(checklistItemSchema).default([]),
   attachments: z.array(attachmentSchema).default([]),
