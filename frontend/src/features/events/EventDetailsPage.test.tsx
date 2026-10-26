@@ -48,7 +48,7 @@ describe('Event layout', () => {
     expect(preview).toHaveAttribute('target', '_blank')
     expect(preview).toHaveAttribute('rel', 'noopener noreferrer')
     const tabs = screen.getByRole('navigation', { name: 'Event sections' })
-    expect(within(tabs).getAllByRole('link').map((a) => a.textContent)).toEqual(['Details', 'Registrations', 'Emails', 'Check-in'])
+    expect(within(tabs).getAllByRole('link').map((a) => a.textContent)).toEqual(['Details', 'Committees', 'Tasks', 'Registrations', 'Emails', 'Check-in'])
     expect(within(tabs).getByRole('link', { name: 'Details' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: 'Events' })).toHaveAttribute('href', '/events')
     expect(await screen.findByRole('button', { name: 'Close registration' })).toBeInTheDocument()

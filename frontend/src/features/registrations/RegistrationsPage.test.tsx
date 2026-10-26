@@ -303,6 +303,6 @@ describe('Registrations', () => {
     expect(screen.queryByRole('button', { name: '+ Manual registration' })).not.toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     const tabs = screen.getByRole('navigation', { name: 'Event sections' })
-    expect(within(tabs).getAllByRole('link').map((a) => a.textContent)).toEqual(['Details', 'Check-in'])
+    expect(within(tabs).getAllByRole('link').map((a) => a.textContent)).toEqual(['Details', 'Committees', 'Tasks', 'Check-in'])
   })
 })

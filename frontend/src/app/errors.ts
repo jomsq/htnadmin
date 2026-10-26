@@ -47,6 +47,11 @@ const codeMessages: Record<string, string> = {
   check_in_closed: 'Check-in is open from a day before the event until a day after it ends.',
   no_check_in: 'Only people who have checked in at an event can be Members.',
   proof_invalid: 'This upload link is invalid or has expired.',
+  duplicate_name: 'Another committee in this event already uses this name.',
+  has_open_tasks: 'This committee still has open tasks. Move or finish them first.',
+  already_lead: 'This goon already leads another committee in this event.',
+  already_in_committee: 'This person is already in another committee for this event.',
+  is_lead: 'This person leads the committee. Change the lead first.',
 }
 
 /** Message for a known API error code, if any. */

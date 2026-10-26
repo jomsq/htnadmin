@@ -37,6 +37,7 @@ export function EventLayout() {
   const canManage = useCan(Policies.EventsManage)
   const canRegistrations = useCan(Policies.RegistrationsManage)
   const canCheckIn = useCan(Policies.CheckInScan)
+  const canViewBoard = useCan(Policies.TasksViewBoard)
 
   if (query.isPending) {
     return (
@@ -91,6 +92,8 @@ export function EventLayout() {
   // Tabs the user can't open are hidden (the routes and the API check the same policies).
   const tabs = [
     { to: `${base}/details`, label: 'Details' },
+    { to: `${base}/committees`, label: 'Committees' },
+    ...(canViewBoard ? [{ to: `${base}/tasks`, label: 'Tasks' }] : []),
     ...(canRegistrations ? [{ to: `${base}/registrations`, label: 'Registrations' }] : []),
     ...(canManage ? [{ to: `${base}/emails`, label: 'Emails' }] : []),
     ...(canCheckIn ? [{ to: `${base}/check-in`, label: 'Check-in' }] : []),

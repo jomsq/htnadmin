@@ -15,7 +15,21 @@ export const boardMe: Me = {
   twoFactorEnabled: true,
   // The server sends true only while the board 2FA gate applies.
   twoFactorRequired: false,
-  policies: ['People.View', 'People.Manage', 'Settings.Personal', 'Settings.Manage', 'Finance.View', 'Events.View', 'Events.Manage', 'Registrations.Manage', 'CheckIn.Scan'],
+  policies: [
+    'People.View',
+    'People.Manage',
+    'Settings.Personal',
+    'Settings.Manage',
+    'Finance.View',
+    'Events.View',
+    'Events.Manage',
+    'Registrations.Manage',
+    'CheckIn.Scan',
+    'Committees.ManageMembers',
+    'Tasks.ViewBoard',
+    'Tasks.Manage',
+    'Tasks.Work',
+  ],
   preferences: { mode: 'system', textSize: 'default', density: 'comfortable' },
 }
 
@@ -29,7 +43,8 @@ export const goonMe: Me = {
   level: 'Goon',
   twoFactorEnabled: false,
   twoFactorRequired: false,
-  policies: ['People.View', 'Settings.Personal', 'Events.View', 'CheckIn.Scan'],
+  // The four task/committee policies are resource-scoped: the flat list only says "may be allowed".
+  policies: ['People.View', 'Settings.Personal', 'Events.View', 'CheckIn.Scan', 'Committees.ManageMembers', 'Tasks.ViewBoard', 'Tasks.Work'],
 }
 
 /** GET /api/settings/org as seeded (domain defaults, canvas brand color). */

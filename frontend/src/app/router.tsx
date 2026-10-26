@@ -97,6 +97,15 @@ export const routes: RouteObject[] = [
                       { index: true, element: <Navigate to="details" replace /> },
                       { path: 'details', lazy: async () => ({ Component: (await import('@/features/events/EventDetailsPage')).EventDetailsPage }) },
                       {
+                        path: 'committees',
+                        children: [{ index: true, lazy: async () => ({ Component: (await import('@/features/committees/CommitteesPage')).CommitteesPage }) }],
+                      },
+                      {
+                        path: 'tasks',
+                        element: <RequirePolicy policy={Policies.TasksViewBoard} />,
+                        children: [{ index: true, lazy: async () => ({ Component: (await import('@/features/tasks/TaskBoardPage')).TaskBoardPage }) }],
+                      },
+                      {
                         path: 'registrations',
                         element: <RequirePolicy policy={Policies.RegistrationsManage} />,
                         children: [

@@ -1,7 +1,7 @@
 import { cn } from '@/lib/cn'
 
 /** danger = red text on a secondary button; destructive = solid red for confirm dialogs. */
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'destructive' | 'link'
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'dashed' | 'danger' | 'destructive' | 'link'
 export type ButtonSize = 'sm' | 'md' | 'lg' | 'icon'
 
 const base =
@@ -12,6 +12,8 @@ export const buttonVariants: Record<ButtonVariant, string> = {
   secondary:
     'bg-white text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-100 dark:ring-white/15 dark:hover:bg-gray-800',
   ghost: 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800',
+  dashed:
+    'border border-dashed border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-white/20 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800',
   danger:
     'bg-white text-red-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-red-50 dark:bg-gray-900 dark:text-red-400 dark:ring-white/15 dark:hover:bg-red-950/40',
   destructive: 'bg-red-700 text-white shadow-sm hover:bg-red-800 dark:bg-red-600 dark:hover:bg-red-700',
