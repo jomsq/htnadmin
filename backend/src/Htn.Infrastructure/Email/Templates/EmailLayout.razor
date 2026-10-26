@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>@Title</title>
+</head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111827;">
+  <div style="display:none;max-height:0;overflow:hidden;">@Preheader</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden;">
+          <tr>
+            <td style="background:@Brand.Color;padding:20px 32px;color:#ffffff;font-size:18px;font-weight:700;">@Brand.OrgName</td>
+          </tr>
+          <tr>
+            <td style="padding:32px;font-size:16px;line-height:1.6;">
+              @ChildContent
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 32px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;">
+              @Brand.OrgName &middot; This is an automated message from the HTN Admin system. If you did not expect it, you can ignore it.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Preheader { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

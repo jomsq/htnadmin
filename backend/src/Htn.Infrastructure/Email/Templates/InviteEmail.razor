@@ -1,0 +1,17 @@
+<EmailLayout Title="@($"You're invited to {Brand.OrgName} Admin")" Preheader="Set your password to activate your account.">
+  <p style="margin-top:0;">Hi @FirstName,</p>
+  <p>
+    @(InviterName ?? "An admin") created @(EmailText.WithArticle(Level)[..^Level.Length].Trim()) <strong>@Level</strong> account for you@(Position is null ? "" : $" ({Position})") on the @Brand.OrgName Admin system.
+  </p>
+  <p>Set your password to activate it. The link works once and expires in @ExpiresInHours hours.</p>
+  <EmailButton Href="@Link" Label="Activate my account" />
+</EmailLayout>
+
+@code {
+    [Parameter, EditorRequired] public string FirstName { get; set; } = "";
+    [Parameter] public string? InviterName { get; set; }
+    [Parameter, EditorRequired] public string Level { get; set; } = "";
+    [Parameter] public string? Position { get; set; }
+    [Parameter, EditorRequired] public string Link { get; set; } = "";
+    [Parameter] public int ExpiresInHours { get; set; } = 48;
+}
