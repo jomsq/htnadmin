@@ -9,6 +9,9 @@ public sealed record LoginChallengeDto(bool Requires2fa);
 public sealed record InviteInfoDto(string Email, string FirstName, string Level, string? InviterName, DateTimeOffset ExpiresAt);
 
 public sealed record AcceptInviteRequest(string Token, string Password);
+
+/// <summary>Board accounts must use 2-step verification, so the SPA goes straight to /setup-2fa when this is true.</summary>
+public sealed record AcceptInviteResultDto(bool RequiresTwoFactorSetup);
 public sealed record ForgotPasswordRequest(string Email);
 public sealed record ResetPasswordRequest(string Token, string? Email, string Password);
 

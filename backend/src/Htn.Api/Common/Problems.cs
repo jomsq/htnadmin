@@ -20,4 +20,9 @@ public static class Problems
 
     public static IResult Field(string field, string message) =>
         TypedResults.ValidationProblem(new Dictionary<string, string[]> { [field] = [message] });
+
+    /// <summary>400 ValidationProblem for one field, plus a machine-readable <c>code</c> extension.</summary>
+    public static IResult Field(string field, string message, string code) =>
+        TypedResults.ValidationProblem(new Dictionary<string, string[]> { [field] = [message] },
+            extensions: new Dictionary<string, object?> { ["code"] = code });
 }

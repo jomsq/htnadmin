@@ -4,6 +4,7 @@ using Htn.Infrastructure.Data;
 using Htn.Infrastructure.Email;
 using Htn.Infrastructure.Identity;
 using Htn.Infrastructure.Outbox;
+using Htn.Infrastructure.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
@@ -40,6 +41,9 @@ public static class DependencyInjection
             o.InboxId = from.InboxId;
             o.From = from.From;
         });
+
+        services.AddOptions<StorageOptions>().BindConfiguration(StorageOptions.Section);
+        services.AddSingleton<IFileStorage, LocalDiskFileStorage>();
 
         services.AddScoped<EmailRenderer>();
         services.AddScoped<OutboxProcessor>();

@@ -1,13 +1,23 @@
+using Htn.Domain.Settings;
+using Htn.Infrastructure.Data;
 using Htn.Infrastructure.Email.Templates;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Htn.Infrastructure.Email;
 
-/// <summary>Renders Razor component templates to HTML with <see cref="HtmlRenderer"/>.</summary>
-public sealed class EmailRenderer(IServiceProvider services, ILoggerFactory loggerFactory)
+/// <summary>Renders Razor component templates to HTML with <see cref="HtmlRenderer"/>. Brand color comes from org settings.</summary>
+public sealed class EmailRenderer(IServiceProvider services, ILoggerFactory loggerFactory, HtnDbContext db)
 {
+    /// <summary>The org brand color, re-validated so a bad stored value can't inject CSS; falls back to <see cref="Brand.Color"/>.</summary>
+    public async Task<string> BrandColorAsync()
+    {
+        var stored = await db.OrgSettings.AsNoTracking().Where(s => s.Id == OrgSettings.SingletonId).Select(s => s.BrandColor).SingleOrDefaultAsync();
+        return OrgSettings.SafeBrandColor(stored);
+    }
+
     public async Task<string> RenderAsync<TComponent>(IDictionary<string, object?> parameters) where TComponent : IComponent
     {
         await using var renderer = new HtmlRenderer(services, loggerFactory);
@@ -28,6 +38,7 @@ public sealed class EmailRenderer(IServiceProvider services, ILoggerFactory logg
             [nameof(InviteEmail.Position)] = p.Position,
             [nameof(InviteEmail.Link)] = link,
             [nameof(InviteEmail.ExpiresInHours)] = expiresInHours,
+            [nameof(InviteEmail.BrandColor)] = await BrandColorAsync(),
         });
         var text =
             $"""
@@ -50,6 +61,7 @@ public sealed class EmailRenderer(IServiceProvider services, ILoggerFactory logg
             [nameof(PasswordResetEmail.FirstName)] = p.FirstName,
             [nameof(PasswordResetEmail.Link)] = link,
             [nameof(PasswordResetEmail.ExpiresInMinutes)] = expiresInMinutes,
+            [nameof(PasswordResetEmail.BrandColor)] = await BrandColorAsync(),
         });
         var text =
             $"""

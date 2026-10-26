@@ -37,6 +37,8 @@ ENV ASPNETCORE_URLS=http://+:8080 \
     DOTNET_CLI_TELEMETRY_OPTOUT=1
 # Files stay root-owned (read-only for the app user); the process runs as the built-in `app` user.
 COPY --from=build /app/publish ./
+# The only writable folder: uploaded files (Storage__Path). A new named volume copies this ownership on first mount.
+RUN mkdir -p /app/uploads && chown "$APP_UID" /app/uploads
 USER $APP_UID
 EXPOSE 8080
 # The aspnet image ships no curl/wget. Rather than adding packages (size + CVE surface), bash's

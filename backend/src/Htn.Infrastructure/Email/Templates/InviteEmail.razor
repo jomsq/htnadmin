@@ -1,10 +1,10 @@
-<EmailLayout Title="@($"You're invited to {Brand.OrgName} Admin")" Preheader="Set your password to activate your account.">
+<EmailLayout Title="@($"You're invited to {Brand.OrgName} Admin")" Preheader="Set your password to activate your account." BrandColor="@BrandColor">
   <p style="margin-top:0;">Hi @FirstName,</p>
   <p>
     @(InviterName ?? "An admin") created @(EmailText.WithArticle(Level)[..^Level.Length].Trim()) <strong>@Level</strong> account for you@(Position is null ? "" : $" ({Position})") on the @Brand.OrgName Admin system.
   </p>
   <p>Set your password to activate it. The link works once and expires in @ExpiresInHours hours.</p>
-  <EmailButton Href="@Link" Label="Activate my account" />
+  <EmailButton Href="@Link" Label="Activate my account" BrandColor="@BrandColor" />
 </EmailLayout>
 
 @code {
@@ -14,4 +14,5 @@
     [Parameter] public string? Position { get; set; }
     [Parameter, EditorRequired] public string Link { get; set; } = "";
     [Parameter] public int ExpiresInHours { get; set; } = 48;
+    [Parameter] public string BrandColor { get; set; } = Brand.Color;
 }

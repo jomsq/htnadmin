@@ -179,7 +179,7 @@ public sealed class PeopleEndpointsTests(HtnApiFactory factory) : IClassFixture<
         var anon = factory.NewClient();
         Assert.Equal(HttpStatusCode.NotFound, (await anon.GetAsync($"/api/auth/invite/{first}")).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await anon.PostAsync("/api/auth/invite/accept", new { token = first, password = "long-enough-password" })).StatusCode);
-        Assert.Equal(HttpStatusCode.NoContent, (await anon.PostAsync("/api/auth/invite/accept", new { token = second, password = "long-enough-password" })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await anon.PostAsync("/api/auth/invite/accept", new { token = second, password = "long-enough-password" })).StatusCode);
         Assert.True(await factory.DbAsync(db => db.AuditEntries.AnyAsync(a => a.Action == "person.invite_resent" && a.EntityId == id.ToString())));
 
         // Already active now.

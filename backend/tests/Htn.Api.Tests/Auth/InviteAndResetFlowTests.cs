@@ -43,7 +43,8 @@ public sealed class InviteAndResetFlowTests(HtnApiFactory factory) : IClassFixtu
 
         var anon = factory.NewClient();
         var accept = await anon.PostAsync("/api/auth/invite/accept", new { token, password = NewPassword });
-        Assert.Equal(HttpStatusCode.NoContent, accept.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, accept.StatusCode);
+        Assert.False((await ApiClient.JsonAsync(accept)).GetProperty("requiresTwoFactorSetup").GetBoolean()); // Goon
 
         var login = await anon.LoginAsync(email, NewPassword);
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
@@ -64,7 +65,7 @@ public sealed class InviteAndResetFlowTests(HtnApiFactory factory) : IClassFixtu
         var email = HtnApiFactory.UniqueEmail("reuse");
         var token = await InviteGoonAsync(email);
         var anon = factory.NewClient();
-        Assert.Equal(HttpStatusCode.NoContent, (await anon.PostAsync("/api/auth/invite/accept", new { token, password = NewPassword })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await anon.PostAsync("/api/auth/invite/accept", new { token, password = NewPassword })).StatusCode);
 
         var again = await anon.PostAsync("/api/auth/invite/accept", new { token, password = "another-password-123" });
         Assert.Equal(HttpStatusCode.BadRequest, again.StatusCode);
@@ -82,7 +83,7 @@ public sealed class InviteAndResetFlowTests(HtnApiFactory factory) : IClassFixtu
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
         Assert.True((await ApiClient.JsonAsync(res)).GetProperty("errors").TryGetProperty("password", out _));
 
-        Assert.Equal(HttpStatusCode.NoContent, (await anon.PostAsync("/api/auth/invite/accept", new { token, password = NewPassword })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await anon.PostAsync("/api/auth/invite/accept", new { token, password = NewPassword })).StatusCode);
     }
 
     [Fact]

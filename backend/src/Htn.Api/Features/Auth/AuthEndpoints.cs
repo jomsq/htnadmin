@@ -159,7 +159,8 @@ public static class AuthEndpoints
         audit.Record(user.Id, "user.invite_accepted", nameof(AppUser), user.Id.ToString());
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        return TypedResults.NoContent();
+        var isBoard = await users.IsInRoleAsync(user, Roles.Board);
+        return TypedResults.Ok(new AcceptInviteResultDto(RequiresTwoFactorSetup: isBoard && !user.TwoFactorEnabled));
     }
 
     private static async Task<IResult> ForgotPassword(

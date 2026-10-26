@@ -40,8 +40,7 @@ internal sealed class PersonHistoryConfiguration : IEntityTypeConfiguration<Pers
 {
     public void Configure(EntityTypeBuilder<PersonHistory> b)
     {
-        b.ToTable("person_history", t => t.HasCheckConstraint("ck_person_history_kind", CheckConstraints.In("kind",
-            PersonHistoryKinds.Created, PersonHistoryKinds.LevelChanged, PersonHistoryKinds.PositionChanged, PersonHistoryKinds.Deactivated)));
+        b.ToTable("person_history", t => t.HasCheckConstraint("ck_person_history_kind", CheckConstraints.In("kind", [.. PersonHistoryKinds.All])));
         b.HasKey(h => h.Id);
         b.Property(h => h.Id).ValueGeneratedNever();
         b.Property(h => h.Kind).HasMaxLength(32).IsRequired();

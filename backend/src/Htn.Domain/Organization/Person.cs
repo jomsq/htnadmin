@@ -64,6 +64,73 @@ public sealed class Person
         _history.Add(new PersonHistory(Id, at, actorId, PersonHistoryKinds.LevelChanged, from.ToString(), newLevel.ToString(), reason));
     }
 
+    /// <summary>Why <see cref="Promote"/> would refuse a move, or <see cref="PromotionError.None"/>.</summary>
+    public PromotionError CheckPromotion(PersonLevel to, string? reason)
+    {
+        if (!IsActive) return PromotionError.Inactive;
+        if (!Enum.IsDefined(to)) return PromotionError.UnknownLevel;
+        return PromotionRules.Classify(Level, to) switch
+        {
+            LevelChangeKind.Same => PromotionError.SameLevel,
+            LevelChangeKind.SkipsAStep => PromotionError.SkipsAStep,
+            LevelChangeKind.Demotion when string.IsNullOrWhiteSpace(reason) => PromotionError.ReasonRequired,
+            _ => PromotionError.None,
+        };
+    }
+
+    /// <summary>
+    /// Moves the person along the level path. Upward: Member → Apprentice → Goon one step at a time, or any level → Board.
+    /// Any move down is a demotion and needs a reason. Writes a LevelChanged history entry.
+    /// </summary>
+    public LevelChangeKind Promote(PersonLevel to, DateTimeOffset at, Guid? actorId, string? reason)
+    {
+        var error = CheckPromotion(to, reason);
+        if (error != PromotionError.None) throw new DomainException(PromotionErrors.Message(error, Level, to));
+        var kind = PromotionRules.Classify(Level, to);
+        ChangeLevel(to, at, actorId, Optional(reason, "Reason", ReasonMaxLength));
+        return kind;
+    }
+
+    /// <summary>Updates the name fields. Returns true if anything changed.</summary>
+    public bool Rename(string firstName, string? middleName, string lastName)
+    {
+        EnsureActive();
+        var first = Required(firstName, nameof(FirstName), NameMaxLength);
+        var middle = Optional(middleName, nameof(MiddleName), NameMaxLength);
+        var last = Required(lastName, nameof(LastName), NameMaxLength);
+        if (first == FirstName && middle == MiddleName && last == LastName) return false;
+        FirstName = first;
+        MiddleName = middle;
+        LastName = last;
+        return true;
+    }
+
+    /// <summary>
+    /// Changes the roster email. The caller decides whether that's allowed (only while there is no login or the invite
+    /// is still pending). Returns true if it changed.
+    /// </summary>
+    public bool ChangeEmail(string email)
+    {
+        EnsureActive();
+        var normalized = NormalizeEmail(Required(email, nameof(Email), EmailMaxLength));
+        if (normalized == Email) return false;
+        Email = normalized;
+        return true;
+    }
+
+    internal void OnPositionAssigned(string title, DateTimeOffset at, Guid? actorId)
+    {
+        EnsureActive();
+        Position = title;
+        _history.Add(new PersonHistory(Id, at, actorId, PersonHistoryKinds.PositionAssigned, null, title, null));
+    }
+
+    internal void OnPositionVacated(string title, DateTimeOffset at, Guid? actorId, string? reason)
+    {
+        if (Position == title) Position = null;
+        _history.Add(new PersonHistory(Id, at, actorId, PersonHistoryKinds.PositionVacated, title, null, reason));
+    }
+
     public void ChangePosition(string? position, DateTimeOffset at, Guid? actorId)
     {
         EnsureActive();

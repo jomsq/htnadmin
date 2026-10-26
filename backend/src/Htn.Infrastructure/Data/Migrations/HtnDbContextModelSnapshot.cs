@@ -83,6 +83,62 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.ToTable("audit_entries", (string)null);
                 });
 
+            modelBuilder.Entity("Htn.Domain.Files.StoredFile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("content_type");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_id");
+
+                    b.Property<string>("OriginalName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("original_name");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("purpose");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .HasColumnName("sha256")
+                        .IsFixedLength();
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size_bytes");
+
+                    b.HasKey("Id")
+                        .HasName("pk_stored_files");
+
+                    b.HasIndex("Purpose")
+                        .HasDatabaseName("ix_stored_files_purpose");
+
+                    b.ToTable("stored_files", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_stored_files_sha256", "sha256 ~ '^[0-9a-f]{64}$'");
+
+                            t.HasCheckConstraint("ck_stored_files_size", "size_bytes > 0 AND size_bytes <= 1048576");
+                        });
+                });
+
             modelBuilder.Entity("Htn.Domain.Organization.Person", b =>
                 {
                     b.Property<Guid>("Id")
@@ -205,7 +261,191 @@ namespace Htn.Infrastructure.Data.Migrations
 
                     b.ToTable("person_history", null, t =>
                         {
-                            t.HasCheckConstraint("ck_person_history_kind", "kind IN ('created', 'level_changed', 'position_changed', 'deactivated')");
+                            t.HasCheckConstraint("ck_person_history_kind", "kind IN ('created', 'level_changed', 'position_changed', 'deactivated', 'position_assigned', 'position_vacated')");
+                        });
+                });
+
+            modelBuilder.Entity("Htn.Domain.Organization.Position", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("HolderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("holder_id");
+
+                    b.Property<DateTimeOffset?>("HolderSince")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("holder_since");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id")
+                        .HasName("pk_positions");
+
+                    b.HasIndex("Kind", "SortOrder")
+                        .HasDatabaseName("ix_positions_kind_sort_order");
+
+                    b.HasIndex(new[] { "HolderId" }, "ix_positions_holder_id")
+                        .HasDatabaseName("ix_positions_holder_id");
+
+                    b.HasIndex(new[] { "HolderId" }, "ux_positions_one_board_seat_per_person")
+                        .IsUnique()
+                        .HasDatabaseName("ux_positions_one_board_seat_per_person")
+                        .HasFilter("kind = 'BoardSeat' AND holder_id IS NOT NULL");
+
+                    b.ToTable("positions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_positions_held_only_if_active", "holder_id IS NULL OR is_active");
+
+                            t.HasCheckConstraint("ck_positions_holder_since", "(holder_id IS NULL) = (holder_since IS NULL)");
+
+                            t.HasCheckConstraint("ck_positions_kind", "kind IN ('BoardSeat', 'GoonPosition')");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("0192f0a0-0000-7000-8000-0000000b0001"),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            IsActive = true,
+                            Kind = "BoardSeat",
+                            SortOrder = 1,
+                            Title = "Chairperson"
+                        },
+                        new
+                        {
+                            Id = new Guid("0192f0a0-0000-7000-8000-0000000b0002"),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            IsActive = true,
+                            Kind = "BoardSeat",
+                            SortOrder = 2,
+                            Title = "Vice Chairperson"
+                        },
+                        new
+                        {
+                            Id = new Guid("0192f0a0-0000-7000-8000-0000000b0003"),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            IsActive = true,
+                            Kind = "BoardSeat",
+                            SortOrder = 3,
+                            Title = "Treasurer"
+                        },
+                        new
+                        {
+                            Id = new Guid("0192f0a0-0000-7000-8000-0000000b0004"),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            IsActive = true,
+                            Kind = "BoardSeat",
+                            SortOrder = 4,
+                            Title = "Corporate Secretary"
+                        },
+                        new
+                        {
+                            Id = new Guid("0192f0a0-0000-7000-8000-0000000b0005"),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            IsActive = true,
+                            Kind = "BoardSeat",
+                            SortOrder = 5,
+                            Title = "Trustee"
+                        },
+                        new
+                        {
+                            Id = new Guid("0192f0a0-0000-7000-8000-0000000b0006"),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            IsActive = true,
+                            Kind = "BoardSeat",
+                            SortOrder = 6,
+                            Title = "Trustee"
+                        },
+                        new
+                        {
+                            Id = new Guid("0192f0a0-0000-7000-8000-0000000b0007"),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            IsActive = true,
+                            Kind = "BoardSeat",
+                            SortOrder = 7,
+                            Title = "Trustee"
+                        });
+                });
+
+            modelBuilder.Entity("Htn.Domain.Organization.PositionAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AssignedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_by_id");
+
+                    b.Property<string>("EndReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("end_reason");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
+                    b.Property<Guid?>("EndedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ended_by_id");
+
+                    b.Property<Guid>("PersonId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("person_id");
+
+                    b.Property<Guid>("PositionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("position_id");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_position_assignments");
+
+                    b.HasIndex("PersonId", "StartedAt")
+                        .HasDatabaseName("ix_position_assignments_person_id_started_at");
+
+                    b.HasIndex("PositionId", "StartedAt")
+                        .HasDatabaseName("ix_position_assignments_position_id_started_at");
+
+                    b.HasIndex(new[] { "PositionId" }, "ux_position_assignments_current")
+                        .IsUnique()
+                        .HasDatabaseName("ux_position_assignments_current")
+                        .HasFilter("ended_at IS NULL");
+
+                    b.ToTable("position_assignments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_position_assignments_end_reason", "ended_at IS NOT NULL OR (ended_by_id IS NULL AND end_reason IS NULL)");
+
+                            t.HasCheckConstraint("ck_position_assignments_period", "ended_at IS NULL OR ended_at >= started_at");
                         });
                 });
 
@@ -279,6 +519,193 @@ namespace Htn.Infrastructure.Data.Migrations
                             t.HasCheckConstraint("ck_outbox_messages_attempts", "attempts >= 0");
 
                             t.HasCheckConstraint("ck_outbox_messages_status", "status IN ('Pending', 'Sent', 'Failed')");
+                        });
+                });
+
+            modelBuilder.Entity("Htn.Domain.Settings.OrgSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("AssistantMultiplier")
+                        .HasPrecision(3, 1)
+                        .HasColumnType("numeric(3,1)")
+                        .HasColumnName("assistant_multiplier");
+
+                    b.Property<string>("BrandColor")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character(7)")
+                        .HasColumnName("brand_color")
+                        .IsFixedLength();
+
+                    b.Property<decimal>("CollabMultiplier")
+                        .HasPrecision(3, 1)
+                        .HasColumnType("numeric(3,1)")
+                        .HasColumnName("collab_multiplier");
+
+                    b.Property<decimal>("LeadMultiplier")
+                        .HasPrecision(3, 1)
+                        .HasColumnType("numeric(3,1)")
+                        .HasColumnName("lead_multiplier");
+
+                    b.Property<Guid?>("LogoDarkFileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("logo_dark_file_id");
+
+                    b.Property<Guid?>("LogoLightFileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("logo_light_file_id");
+
+                    b.Property<int>("PaymentDeadlineHours")
+                        .HasColumnType("integer")
+                        .HasColumnName("payment_deadline_hours");
+
+                    b.Property<int>("PresetLarge")
+                        .HasColumnType("integer")
+                        .HasColumnName("preset_large");
+
+                    b.Property<int>("PresetMedium")
+                        .HasColumnType("integer")
+                        .HasColumnName("preset_medium");
+
+                    b.Property<int>("PresetSmall")
+                        .HasColumnType("integer")
+                        .HasColumnName("preset_small");
+
+                    b.Property<int>("PresetXl")
+                        .HasColumnType("integer")
+                        .HasColumnName("preset_xl");
+
+                    b.Property<bool>("RequireTaskApproval")
+                        .HasColumnType("boolean")
+                        .HasColumnName("require_task_approval");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_org_settings");
+
+                    b.HasIndex("LogoDarkFileId")
+                        .HasDatabaseName("ix_org_settings_logo_dark_file_id");
+
+                    b.HasIndex("LogoLightFileId")
+                        .HasDatabaseName("ix_org_settings_logo_light_file_id");
+
+                    b.ToTable("org_settings", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_org_settings_brand_color", "brand_color ~ '^#[0-9A-Fa-f]{6}$'");
+
+                            t.HasCheckConstraint("ck_org_settings_multipliers", "lead_multiplier BETWEEN 0 AND 2 AND collab_multiplier BETWEEN 0 AND 2 AND assistant_multiplier BETWEEN 0 AND 2");
+
+                            t.HasCheckConstraint("ck_org_settings_payment_deadline", "payment_deadline_hours BETWEEN 1 AND 336");
+
+                            t.HasCheckConstraint("ck_org_settings_presets", "preset_small >= 1 AND preset_small < preset_medium AND preset_medium < preset_large AND preset_large < preset_xl AND preset_xl <= 1000");
+
+                            t.HasCheckConstraint("ck_org_settings_singleton", "id = 1");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            AssistantMultiplier = 0.3m,
+                            BrandColor = "#B71C1C",
+                            CollabMultiplier = 0.7m,
+                            LeadMultiplier = 1.0m,
+                            PaymentDeadlineHours = 48,
+                            PresetLarge = 40,
+                            PresetMedium = 20,
+                            PresetSmall = 10,
+                            PresetXl = 80,
+                            RequireTaskApproval = true
+                        });
+                });
+
+            modelBuilder.Entity("Htn.Domain.Settings.PaymentAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AccountName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("account_name");
+
+                    b.Property<string>("AccountNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("account_number");
+
+                    b.Property<string>("BankName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("bank_name");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeactivatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deactivated_at");
+
+                    b.Property<string>("DeactivationReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("deactivation_reason");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_default");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("label");
+
+                    b.HasKey("Id")
+                        .HasName("pk_payment_accounts");
+
+                    b.HasIndex("IsActive")
+                        .HasDatabaseName("ix_payment_accounts_is_active");
+
+                    b.HasIndex("IsDefault")
+                        .IsUnique()
+                        .HasDatabaseName("ux_payment_accounts_single_default")
+                        .HasFilter("is_default");
+
+                    b.ToTable("payment_accounts", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_payment_accounts_bank_name", "kind <> 'Bank' OR bank_name IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_payment_accounts_deactivated", "(is_active AND deactivated_at IS NULL AND deactivation_reason IS NULL) OR (NOT is_active AND deactivated_at IS NOT NULL AND deactivation_reason IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_payment_accounts_default_active", "NOT is_default OR is_active");
+
+                            t.HasCheckConstraint("ck_payment_accounts_kind", "kind IN ('GCash', 'Bank', 'Cash')");
+
+                            t.HasCheckConstraint("ck_payment_accounts_number", "kind = 'Cash' OR account_number IS NOT NULL");
                         });
                 });
 
@@ -724,6 +1151,47 @@ namespace Htn.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_person_history_people_person_id");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Organization.Position", b =>
+                {
+                    b.HasOne("Htn.Domain.Organization.Person", null)
+                        .WithMany()
+                        .HasForeignKey("HolderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_positions_people_holder_id");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Organization.PositionAssignment", b =>
+                {
+                    b.HasOne("Htn.Domain.Organization.Person", null)
+                        .WithMany()
+                        .HasForeignKey("PersonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_position_assignments_people_person_id");
+
+                    b.HasOne("Htn.Domain.Organization.Position", null)
+                        .WithMany()
+                        .HasForeignKey("PositionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_position_assignments_positions_position_id");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Settings.OrgSettings", b =>
+                {
+                    b.HasOne("Htn.Domain.Files.StoredFile", null)
+                        .WithMany()
+                        .HasForeignKey("LogoDarkFileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_org_settings_stored_files_logo_dark_file_id");
+
+                    b.HasOne("Htn.Domain.Files.StoredFile", null)
+                        .WithMany()
+                        .HasForeignKey("LogoLightFileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_org_settings_stored_files_logo_light_file_id");
                 });
 
             modelBuilder.Entity("Htn.Infrastructure.Identity.AccountToken", b =>

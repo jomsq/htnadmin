@@ -34,6 +34,19 @@ public sealed class ApiClient(HttpClient http)
         return await http.SendAsync(req);
     }
 
+    /// <summary>multipart/form-data POST with one file field, like the SPA's upload inputs.</summary>
+    public async Task<HttpResponseMessage> PostFileAsync(string url, byte[] content, string fileName, string contentType, string field = "file", bool csrf = true)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, url);
+        var form = new MultipartFormDataContent();
+        var file = new ByteArrayContent(content);
+        file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+        form.Add(file, field, fileName);
+        req.Content = form;
+        if (csrf) req.Headers.Add("X-CSRF-TOKEN", await CsrfTokenAsync());
+        return await http.SendAsync(req);
+    }
+
     public Task<HttpResponseMessage> LoginAsync(string email, string password) =>
         PostAsync("/api/auth/login", new { email, password });
 

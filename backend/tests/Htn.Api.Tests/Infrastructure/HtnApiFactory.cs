@@ -29,6 +29,9 @@ public class HtnApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     public FakeEmailSender Emails { get; } = new();
 
+    /// <summary>Per-fixture upload folder (Storage:Path), deleted on dispose.</summary>
+    public string StoragePath { get; } = Path.Combine(Path.GetTempPath(), "htn-test-uploads-" + Guid.NewGuid().ToString("N"));
+
     public async Task InitializeAsync()
     {
         _database = await TestDatabase.CreateAsync();
@@ -40,6 +43,7 @@ public class HtnApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         await base.DisposeAsync();
         if (_database is not null) await _database.DisposeAsync();
+        if (Directory.Exists(StoragePath)) Directory.Delete(StoragePath, recursive: true);
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -55,6 +59,7 @@ public class HtnApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("Auth:RequireBoard2fa", RequireBoard2fa ? "true" : "false");
         builder.UseSetting("Auth:SecurityStampValidationInterval", "00:00:00");
         builder.UseSetting("App:PublicBaseUrl", "https://admin.test");
+        builder.UseSetting("Storage:Path", StoragePath);
         foreach (var (key, value) in Settings) builder.UseSetting(key, value);
         builder.ConfigureTestServices(services =>
         {

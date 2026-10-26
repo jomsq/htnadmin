@@ -41,9 +41,12 @@ services:
       MAIL_FROM: ${MAIL_FROM:-HackTheNorth.PH <no-reply@hackthenorth.ph>}
       QR_SIGNING_KEY: ${QR_SIGNING_KEY:-}
       App__PublicBaseUrl: ${App__PublicBaseUrl:-http://localhost:5173}
+      Storage__Path: /app/uploads   # uploaded logos (PNG); the `uploads` volume below
       # Sample accounts (incl. a Board login with a published password) are seeded only when BOTH this is true
       # AND ASPNETCORE_ENVIRONMENT=Development.
       Seed__Dev: ${SEED_DEV:-true}
+    volumes:
+      - uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -85,3 +88,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:

@@ -23,3 +23,6 @@ test-results/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Uploaded files in local (non-Docker) runs (Storage:Path)
+backend/src/Htn.Api/uploads/

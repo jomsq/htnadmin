@@ -1,6 +1,8 @@
 using Htn.Domain.Audit;
+using Htn.Domain.Files;
 using Htn.Domain.Organization;
 using Htn.Domain.Outbox;
+using Htn.Domain.Settings;
 using Htn.Infrastructure.Identity;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
@@ -14,6 +16,11 @@ public sealed class HtnDbContext(DbContextOptions<HtnDbContext> options)
 {
     public DbSet<Person> People => Set<Person>();
     public DbSet<PersonHistory> PersonHistory => Set<PersonHistory>();
+    public DbSet<Position> Positions => Set<Position>();
+    public DbSet<PositionAssignment> PositionAssignments => Set<PositionAssignment>();
+    public DbSet<OrgSettings> OrgSettings => Set<OrgSettings>();
+    public DbSet<PaymentAccount> PaymentAccounts => Set<PaymentAccount>();
+    public DbSet<StoredFile> StoredFiles => Set<StoredFile>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<OutboxMessage> Outbox => Set<OutboxMessage>();
     public DbSet<AccountToken> AccountTokens => Set<AccountToken>();
@@ -53,6 +60,8 @@ public sealed class HtnDbContext(DbContextOptions<HtnDbContext> options)
                 throw new InvalidOperationException($"{entry.Entity.GetType().Name} is append-only.");
             if (entry.State == EntityState.Deleted && entry.Entity is Person)
                 throw new InvalidOperationException("People are deactivated, never deleted.");
+            if (entry.State == EntityState.Deleted && entry.Entity is Position or PositionAssignment or PaymentAccount or StoredFile or Domain.Settings.OrgSettings)
+                throw new InvalidOperationException($"{entry.Entity.GetType().Name} rows are never deleted.");
         }
     }
 }

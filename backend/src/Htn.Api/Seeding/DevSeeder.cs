@@ -30,7 +30,22 @@ public static class DevSeeder
         await EnsureAsync(db, users, clock, "Alex", "Reyes", "alex@hackthenorth.ph", PersonLevel.Board, "Chairperson", ct);
         await EnsureAsync(db, users, clock, "Mika", "Soriano", "mika@hackthenorth.ph", PersonLevel.Goon, "Head of Logistics", ct);
         await EnsureAsync(db, users, clock, "Paolo", "Garcia", "paolo@hackthenorth.ph", PersonLevel.Member, null, ct);
+        await EnsureAsync(db, users, clock, "Leo", "Navarro", "leo@hackthenorth.ph", PersonLevel.Board, "Treasurer", ct);
+        await EnsurePositionsAsync(db, clock, ct);
         logger.LogInformation("Development seed data is in place");
+    }
+
+    /// <summary>Sample goon positions from the design canvas. Board seats come from the migration in every environment.</summary>
+    public static readonly string[] SampleGoonPositions =
+        ["Head of Logistics", "Head of Programs", "Head of Marketing", "Head of Partnerships", "Head of Tech"];
+
+    private static async Task EnsurePositionsAsync(HtnDbContext db, TimeProvider clock, CancellationToken ct)
+    {
+        var existing = await db.Positions.Where(p => p.Kind == PositionKind.GoonPosition).Select(p => p.Title).ToListAsync(ct);
+        var order = existing.Count;
+        foreach (var title in SampleGoonPositions.Where(t => !existing.Contains(t)))
+            db.Positions.Add(Position.Create(PositionKind.GoonPosition, title, ++order, clock.GetUtcNow()));
+        await db.SaveChangesAsync(ct);
     }
 
     private static async Task EnsureAsync(

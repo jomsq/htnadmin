@@ -104,6 +104,7 @@ ValidationExtensions.UseCamelCasePropertyNames();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>(includeInternalTypes: true);
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<MeService>();
+builder.Services.AddScoped<AccountProvisioning>();
 builder.Services.AddHealthChecks().AddDbContextCheck<HtnDbContext>("db");
 
 var app = builder.Build();
@@ -121,7 +122,12 @@ app.UseAuthorization();
 app.MapHealthChecks("/health").AllowAnonymous();
 app.MapAuth();
 app.MapPeople();
+app.MapPositions();
+app.MapFinanceRoles();
 app.MapPreferences();
+app.MapOrgSettings();
+app.MapPaymentAccounts();
+app.MapFiles();
 
 var migrate = app.Configuration.GetValue("Database:MigrateOnStartup", app.Environment.IsDevelopment());
 if (migrate)
