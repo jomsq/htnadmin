@@ -20,6 +20,7 @@ const codeMessages: Record<string, string> = {
   email_locked: 'The email can only change before the person has activated their login.',
   duplicate_email: 'Someone with this email is already in the organization.',
   import_has_errors: 'Some rows have errors. Fix the file and preview it again.',
+  self_change: "You can't change your own role. Ask another board member.",
   wrong_level: "This person's level doesn't fit that role.",
   low_contrast: 'This color is too light for white text. Pick a darker shade (contrast 4.5:1 or more).',
 }

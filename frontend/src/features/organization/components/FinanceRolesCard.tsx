@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { useAuth } from '@/app/auth/auth-context'
 import { errorMessage } from '@/app/errors'
 import { Alert } from '@/components/ui/Alert'
 import { Button } from '@/components/ui/Button'
@@ -79,13 +80,16 @@ function FinanceRolesForm({ roles, board, goons }: { roles: FinanceRoles; board:
   const mutation = useUpdateFinanceRolesMutation()
   const [cfo, setCfo] = useState(roles.cfo?.id ?? '')
   const [assistant, setAssistant] = useState(roles.assistant?.id ?? '')
+  const myId = useAuth().me?.personId ?? null
+  // The API refuses self-appointment (409 self_change); another board member has to make the change.
+  const selectable = (p: Person, current: string | undefined) => p.id !== myId || p.id === current
   const dirty = cfo !== (roles.cfo?.id ?? '') || assistant !== (roles.assistant?.id ?? '')
 
   function submit(e: FormEvent) {
     e.preventDefault()
-    if (mutation.isPending || !dirty) return
+    if (mutation.isPending || !dirty || !cfo) return
     mutation.mutate(
-      { cfoPersonId: cfo || null, assistantPersonId: assistant || null },
+      { cfoPersonId: cfo, assistantPersonId: assistant || null },
       {
         onSuccess: () => toast({ tone: 'success', title: 'Finance roles saved.' }),
         onError: (err) => toast({ tone: 'error', title: 'Could not save finance roles.', description: errorMessage(err) }),
@@ -96,12 +100,16 @@ function FinanceRolesForm({ roles, board, goons }: { roles: FinanceRoles; board:
   return (
     <form noValidate onSubmit={submit} className="flex flex-col gap-4">
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="CFO" hint="An active board member with a login.">
+        <Field label="CFO" hint="An active board member with a login. You can't appoint yourself.">
           {(p) => (
             <Select {...p} value={cfo} onChange={(e) => setCfo(e.target.value)}>
-              <option value="">No CFO</option>
+              {!cfo && (
+                <option value="" disabled>
+                  Choose a board member
+                </option>
+              )}
               {board.map((b) => (
-                <option key={b.id} value={b.id}>
+                <option key={b.id} value={b.id} disabled={!selectable(b, roles.cfo?.id)}>
                   {fullName(b)}
                 </option>
               ))}
@@ -113,7 +121,7 @@ function FinanceRolesForm({ roles, board, goons }: { roles: FinanceRoles; board:
             <Select {...p} value={assistant} onChange={(e) => setAssistant(e.target.value)}>
               <option value="">No finance assistant</option>
               {goons.map((g) => (
-                <option key={g.id} value={g.id}>
+                <option key={g.id} value={g.id} disabled={!selectable(g, roles.assistant?.id)}>
                   {fullName(g)}
                 </option>
               ))}
@@ -122,7 +130,7 @@ function FinanceRolesForm({ roles, board, goons }: { roles: FinanceRoles; board:
         </Field>
       </div>
       <div>
-        <Button type="submit" loading={mutation.isPending} disabled={!dirty}>
+        <Button type="submit" loading={mutation.isPending} disabled={!dirty || !cfo}>
           Save finance roles
         </Button>
       </div>

@@ -193,4 +193,4 @@ export const levelForKind: Record<PositionKind, Level> = { BoardSeat: 'Board', G
 
 export const financeRolesSchema = z.object({ cfo: personRefSchema.nullable(), assistant: personRefSchema.nullable() })
 export type FinanceRoles = z.infer<typeof financeRolesSchema>
-export type FinanceRolesBody = { cfoPersonId: string | null; assistantPersonId: string | null }
+export type FinanceRolesBody = { cfoPersonId: string; assistantPersonId: string | null }

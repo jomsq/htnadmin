@@ -181,6 +181,16 @@ describe('PositionsPage', () => {
     expect(body).toEqual({ cfoPersonId: 'p1', assistantPersonId: 'p2' })
   })
 
+  it('requires a CFO and does not offer self-appointment', async () => {
+    signInAs({ ...boardMe, personId: 'p3' })
+    mockApi()
+    renderWithProviders(<PositionsPage />)
+    const cfo = await screen.findByLabelText('CFO')
+    expect(within(cfo).queryByRole('option', { name: 'No CFO' })).not.toBeInTheDocument()
+    expect(within(cfo).getByRole('option', { name: 'Bea Lim' })).toBeDisabled()
+    expect(within(cfo).getByRole('option', { name: 'Alex Reyes' })).toBeEnabled()
+  })
+
   it('hides Assign, Vacate, + Position and Finance roles without People.Manage', async () => {
     signInAs(goonMe)
     mockApi()
