@@ -22,6 +22,11 @@ public class HtnApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     protected virtual bool RequireBoard2fa => false;
 
+    /// <summary>Extra configuration applied after the defaults (e.g. low rate limits for a dedicated fixture).</summary>
+    protected virtual IReadOnlyDictionary<string, string?> Settings { get; } = new Dictionary<string, string?>();
+
+    protected virtual string Environment => "Testing";
+
     public FakeEmailSender Emails { get; } = new();
 
     public async Task InitializeAsync()
@@ -39,14 +44,18 @@ public class HtnApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Testing");
+        builder.UseEnvironment(Environment);
         builder.UseSetting("ConnectionStrings:Db", _database!.ConnectionString);
         builder.UseSetting("Database:MigrateOnStartup", "false");
         builder.UseSetting("Outbox:Enabled", "false");
         builder.UseSetting("RateLimiting:AuthPermitLimit", "100000");
+        builder.UseSetting("RateLimiting:LoginPerEmailPermitLimit", "100000");
+        builder.UseSetting("RateLimiting:ForgotPerEmailPermitLimit", "100000");
+        builder.UseSetting("Email:AllowLoggingSender", "true"); // the fake sender replaces it below
         builder.UseSetting("Auth:RequireBoard2fa", RequireBoard2fa ? "true" : "false");
         builder.UseSetting("Auth:SecurityStampValidationInterval", "00:00:00");
         builder.UseSetting("App:PublicBaseUrl", "https://admin.test");
+        foreach (var (key, value) in Settings) builder.UseSetting(key, value);
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IEmailSender>();

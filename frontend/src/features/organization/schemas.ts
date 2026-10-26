@@ -15,7 +15,8 @@ export const personSchema = z.object({
   level: levelSchema,
   position: z.string().nullish(),
   isActive: z.boolean(),
-  accountStatus: accountStatusSchema,
+  // null for non-board viewers (the API hides account details from them)
+  accountStatus: accountStatusSchema.nullable(),
   lastSignInAt: z.string().nullish(),
   createdAt: z.string(),
 })

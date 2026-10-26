@@ -16,9 +16,16 @@ public sealed class AuthSettings
 public sealed class RateLimitSettings
 {
     public const string Section = "RateLimiting";
-    public const string AuthPolicy = "auth";
 
-    /// <summary>Requests per window, per client IP and route, on login/2FA/forgot/reset/invite accept.</summary>
+    /// <summary>Requests per window, per client IP, for each auth policy (login, 2FA, forgot, reset, invite).</summary>
     public int AuthPermitLimit { get; set; } = 10;
     public int AuthWindowSeconds { get; set; } = 60;
+
+    /// <summary>Login attempts per normalized email, whether or not an account exists.</summary>
+    public int LoginPerEmailPermitLimit { get; set; } = 10;
+    public int LoginPerEmailWindowSeconds { get; set; } = 15 * 60;
+
+    /// <summary>Password-reset requests per normalized email, whether or not an account exists.</summary>
+    public int ForgotPerEmailPermitLimit { get; set; } = 5;
+    public int ForgotPerEmailWindowSeconds { get; set; } = 10 * 60;
 }

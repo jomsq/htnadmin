@@ -1,17 +1,16 @@
 using System.Text.Json.Serialization;
-using System.Threading.RateLimiting;
 using Htn.Api.Auth;
 using Htn.Api.Common;
 using Htn.Api.Features.Auth;
 using Htn.Api.Features.Organization;
 using Htn.Api.Features.Settings;
+using Htn.Api.Hosting;
 using Htn.Api.Seeding;
 using Htn.Infrastructure;
 using Htn.Infrastructure.Data;
 using Htn.Infrastructure.Identity;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -25,20 +24,13 @@ builder.Services.AddHtnInfrastructure(builder.Configuration);
 builder.Services.AddOptions<AuthSettings>().BindConfiguration(AuthSettings.Section);
 builder.Services.AddOptions<RateLimitSettings>().BindConfiguration(RateLimitSettings.Section);
 
+// ---- Fail fast on unsafe deployment configuration ----
+HostingSetup.EnsureEmailConfigured(builder.Configuration, builder.Environment);
+
 // ---- Reverse proxy (nginx / TLS terminator) ----
 // Trust X-Forwarded-For/Proto so Secure cookies work behind TLS termination and rate limits see the real client IP.
-// Default trusts any proxy (the API is only reachable through the docker network). Set ForwardedHeaders:KnownProxies
-// (comma-separated IPs) to restrict it.
-builder.Services.Configure<ForwardedHeadersOptions>(o =>
-{
-    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    o.KnownIPNetworks.Clear();
-    o.KnownProxies.Clear();
-    var known = builder.Configuration["ForwardedHeaders:KnownProxies"];
-    if (!string.IsNullOrWhiteSpace(known))
-        foreach (var ip in known.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            o.KnownProxies.Add(System.Net.IPAddress.Parse(ip));
-});
+// See HostingSetup.ConfigureForwardedHeaders and the README for ForwardedHeaders:KnownProxies / KnownNetworks.
+builder.Services.Configure<ForwardedHeadersOptions>(o => HostingSetup.ConfigureForwardedHeaders(o, builder.Configuration));
 
 // ---- Problem details, JSON ----
 builder.Services.AddProblemDetails();
@@ -61,13 +53,15 @@ builder.Services
         o.Lockout.MaxFailedAccessAttempts = 5;
         o.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
         o.SignIn.RequireConfirmedAccount = false;
+        o.Tokens.AuthenticatorTokenProvider = ReplayProtectedAuthenticatorTokenProvider.ProviderName; // single-use TOTP codes
     })
     .AddEntityFrameworkStores<HtnDbContext>()
     .AddSignInManager<HtnSignInManager>()
     .AddClaimsPrincipalFactory<HtnClaimsPrincipalFactory>()
-    .AddDefaultTokenProviders();
+    .AddDefaultTokenProviders()
+    .AddTokenProvider<ReplayProtectedAuthenticatorTokenProvider>(ReplayProtectedAuthenticatorTokenProvider.ProviderName);
 
-builder.Services.AddDataProtection().SetApplicationName("htn-admin").PersistKeysToDbContext<HtnDbContext>();
+builder.Services.AddHtnDataProtection(builder.Configuration, builder.Environment);
 
 builder.Services.ConfigureApplicationCookie(o =>
 {
@@ -102,24 +96,8 @@ builder.Services.AddAntiforgery(o =>
     o.Cookie.SameSite = SameSiteMode.Strict;
 });
 
-// ---- Rate limiting (fixed window per client IP and route) ----
-builder.Services.AddRateLimiter(o =>
-{
-    o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    o.OnRejected = (ctx, _) => new ValueTask(Problems.WriteAsync(ctx.HttpContext, StatusCodes.Status429TooManyRequests,
-        "Too many attempts", "Wait a minute and try again.", "rate_limited"));
-    o.AddPolicy(RateLimitSettings.AuthPolicy, http =>
-    {
-        var s = http.RequestServices.GetRequiredService<IOptions<RateLimitSettings>>().Value;
-        var key = $"{http.Connection.RemoteIpAddress}|{http.Request.Path}";
-        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = s.AuthPermitLimit,
-            Window = TimeSpan.FromSeconds(s.AuthWindowSeconds),
-            QueueLimit = 0,
-        });
-    });
-});
+// ---- Rate limiting (fixed window per client IP and auth policy, plus per email on login/forgot) ----
+builder.Services.AddHtnRateLimiting();
 
 // ---- App services ----
 ValidationExtensions.UseCamelCasePropertyNames();
@@ -151,7 +129,7 @@ if (migrate)
     await using var scope = app.Services.CreateAsyncScope();
     await scope.ServiceProvider.GetRequiredService<HtnDbContext>().Database.MigrateAsync();
 }
-if (app.Environment.IsDevelopment())
+if (DevSeeder.ShouldRun(app.Environment, app.Configuration))
     await DevSeeder.SeedAsync(app.Services);
 
 await app.RunAsync();

@@ -10,6 +10,10 @@ public static class AccountStatuses
     public const string Deactivated = "Deactivated";
 }
 
+/// <summary>
+/// A roster row. For non-Board callers <see cref="Email"/> is masked ("m•••@hackthenorth.ph") and
+/// <see cref="AccountStatus"/> / <see cref="LastSignInAt"/> are null.
+/// </summary>
 public sealed record PersonDto(
     Guid Id,
     string FirstName,
@@ -19,7 +23,7 @@ public sealed record PersonDto(
     PersonLevel Level,
     string? Position,
     bool IsActive,
-    string AccountStatus,
+    string? AccountStatus,
     DateTimeOffset? LastSignInAt,
     DateTimeOffset CreatedAt);
 
@@ -32,3 +36,6 @@ public sealed record CreatePersonRequest(
     string Email,
     PersonLevel? Level,
     string? Position);
+
+/// <summary>Optional body for POST /api/people/{id}/deactivate.</summary>
+public sealed record DeactivatePersonRequest(string? Reason);

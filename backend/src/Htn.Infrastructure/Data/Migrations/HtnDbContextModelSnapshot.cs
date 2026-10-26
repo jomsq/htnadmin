@@ -338,9 +338,13 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.HasIndex("UserId", "Purpose")
                         .HasDatabaseName("ix_account_tokens_user_id_purpose");
 
+                    b.HasIndex(new[] { "UserId", "Purpose" }, "ux_account_tokens_open")
+                        .IsUnique()
+                        .HasDatabaseName("ux_account_tokens_open")
+                        .HasFilter("used_at IS NULL AND revoked_at IS NULL");
+
                     b.ToTable("account_tokens", null, t =>
                         {
-
                             t.HasCheckConstraint("ck_account_tokens_purpose", "purpose IN ('Invite', 'PasswordReset')");
 
                             t.HasCheckConstraint("ck_account_tokens_token_hash", "token_hash ~ '^[0-9a-f]{64}$'");
@@ -393,6 +397,10 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.Property<DateTimeOffset?>("LastSignInAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_sign_in_at");
+
+                    b.Property<long?>("LastTotpTimeStep")
+                        .HasColumnType("bigint")
+                        .HasColumnName("last_totp_time_step");
 
                     b.Property<bool>("LockoutEnabled")
                         .HasColumnType("boolean")

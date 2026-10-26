@@ -41,11 +41,14 @@ services:
       MAIL_FROM: ${MAIL_FROM:-HackTheNorth.PH <no-reply@hackthenorth.ph>}
       QR_SIGNING_KEY: ${QR_SIGNING_KEY:-}
       App__PublicBaseUrl: ${App__PublicBaseUrl:-http://localhost:5173}
+      # Sample accounts (incl. a Board login with a published password) are seeded only when BOTH this is true
+      # AND ASPNETCORE_ENVIRONMENT=Development.
+      Seed__Dev: ${SEED_DEV:-true}
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"   # loopback only: dev defaults (seeded accounts, no Board 2FA) must not reach the LAN
     healthcheck:
       # Same check as the image HEALTHCHECK: a real HTTP request to /health that must return 200.
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
@@ -72,7 +75,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"   # loopback only (add a LAN binding in docker-compose.override.yml if you need one)
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:5173/ || exit 1"]
       interval: 10s

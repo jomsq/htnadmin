@@ -16,6 +16,8 @@ import { LevelBadge } from './badges'
 
 function accountText(p: Person): { text: string; tone: 'green' | 'yellow' | 'gray' | 'red' } {
   switch (p.accountStatus) {
+    case null:
+      return { text: 'Account details are visible to the board only.', tone: 'gray' }
     case 'Active':
       return {
         text: p.lastSignInAt ? `Active · last sign-in ${formatDate(p.lastSignInAt)}` : 'Active · has not signed in yet',

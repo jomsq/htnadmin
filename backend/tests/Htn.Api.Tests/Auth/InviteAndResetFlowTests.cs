@@ -53,7 +53,8 @@ public sealed class InviteAndResetFlowTests(HtnApiFactory factory) : IClassFixtu
         Assert.True(user.EmailConfirmed);
         Assert.True(await factory.DbAsync(db => db.AuditEntries.AnyAsync(a => a.Action == "user.invite_accepted" && a.EntityId == user.Id.ToString())));
 
-        var list = await ApiClient.JsonAsync(await anon.GetAsync($"/api/people?search={Uri.EscapeDataString(email)}"));
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+        var list = await ApiClient.JsonAsync(await board.GetAsync($"/api/people?search={Uri.EscapeDataString(email)}"));
         Assert.Equal("Active", list.GetProperty("items")[0].GetProperty("accountStatus").GetString());
     }
 

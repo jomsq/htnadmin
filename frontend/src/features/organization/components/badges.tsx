@@ -16,6 +16,7 @@ const accountStatusLabel: Record<AccountStatus, string> = {
 
 const statusColor: Record<AccountStatus, BadgeColor> = { Active: 'green', InvitePending: 'yellow', NoLogin: 'gray', Deactivated: 'red' }
 
-export function AccountStatusBadge({ status }: { status: AccountStatus }) {
+export function AccountStatusBadge({ status }: { status: AccountStatus | null }) {
+  if (!status) return <span className="text-gray-500 dark:text-gray-400">—</span>
   return <Badge color={statusColor[status]}>{accountStatusLabel[status]}</Badge>
 }

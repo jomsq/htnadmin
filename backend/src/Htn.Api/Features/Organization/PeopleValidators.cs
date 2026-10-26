@@ -20,3 +20,11 @@ public sealed class CreatePersonRequestValidator : AbstractValidator<CreatePerso
         RuleFor(x => x.Position).MaximumLength(Person.PositionMaxLength).WithMessage($"Use at most {Person.PositionMaxLength} characters.");
     }
 }
+
+public sealed class DeactivatePersonRequestValidator : AbstractValidator<DeactivatePersonRequest>
+{
+    public DeactivatePersonRequestValidator()
+    {
+        RuleFor(x => x.Reason).MaximumLength(Person.ReasonMaxLength).WithMessage($"Use at most {Person.ReasonMaxLength} characters.");
+    }
+}

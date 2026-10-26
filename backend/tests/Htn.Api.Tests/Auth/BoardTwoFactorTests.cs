@@ -64,7 +64,8 @@ public sealed class BoardTwoFactorTests(Board2faApiFactory factory) : IClassFixt
         var wrong = await fresh.PostAsync("/api/auth/login/2fa", new { code = "12345" });
         Assert.Equal(HttpStatusCode.Unauthorized, wrong.StatusCode);
 
-        var ok = await fresh.PostAsync("/api/auth/login/2fa", new { code = Totp.Code(key) });
+        // The code used to enable 2FA is spent; the next time step's code (within the allowed drift) works.
+        var ok = await fresh.PostAsync("/api/auth/login/2fa", new { code = Totp.Code(key, DateTimeOffset.UtcNow.AddSeconds(30)) });
         Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
         Assert.Equal("Board", (await ApiClient.JsonAsync(ok)).GetProperty("level").GetString());
         Assert.Equal(HttpStatusCode.OK, (await fresh.GetAsync("/api/people")).StatusCode);

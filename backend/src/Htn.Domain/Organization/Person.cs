@@ -8,6 +8,7 @@ public sealed class Person
     public const int NameMaxLength = 100;
     public const int EmailMaxLength = 254;
     public const int PositionMaxLength = 120;
+    public const int ReasonMaxLength = 500;
 
     private readonly List<PersonHistory> _history = [];
 
@@ -76,9 +77,10 @@ public sealed class Person
     public void Deactivate(DateTimeOffset at, Guid? actorId, string? reason)
     {
         if (!IsActive) throw new DomainException("This person is already deactivated.");
+        var normalizedReason = Optional(reason, "Reason", ReasonMaxLength);
         IsActive = false;
         DeactivatedAt = at;
-        _history.Add(new PersonHistory(Id, at, actorId, PersonHistoryKinds.Deactivated, "active", "deactivated", reason));
+        _history.Add(new PersonHistory(Id, at, actorId, PersonHistoryKinds.Deactivated, "active", "deactivated", normalizedReason));
     }
 
     private void EnsureActive()

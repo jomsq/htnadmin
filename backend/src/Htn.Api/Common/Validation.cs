@@ -17,8 +17,27 @@ public sealed class ValidationFilter<T>(IValidator<T> validator) : IEndpointFilt
     }
 }
 
+/// <summary>Like <see cref="ValidationFilter{T}"/> but a missing body is allowed (the handler gets null).</summary>
+public sealed class OptionalValidationFilter<T>(IValidator<T> validator) : IEndpointFilter where T : class
+{
+    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var arg = context.Arguments.OfType<T>().FirstOrDefault();
+        if (arg is not null)
+        {
+            var result = await validator.ValidateAsync(arg, context.HttpContext.RequestAborted);
+            if (!result.IsValid)
+                return TypedResults.ValidationProblem(result.ToDictionary());
+        }
+        return await next(context);
+    }
+}
+
 public static class ValidationExtensions
 {
+    public static RouteHandlerBuilder ValidateOptional<T>(this RouteHandlerBuilder builder) where T : class =>
+        builder.AddEndpointFilter<OptionalValidationFilter<T>>().ProducesValidationProblem();
+
     public static RouteHandlerBuilder Validate<T>(this RouteHandlerBuilder builder) where T : class =>
         builder.AddEndpointFilter<ValidationFilter<T>>().ProducesValidationProblem();
 

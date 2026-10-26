@@ -25,18 +25,18 @@ public static class AuthEndpoints
 
         g.MapGet("/antiforgery", GetAntiforgery).AllowAnonymous();
 
-        g.MapPost("/login", Login).AllowAnonymous().RequireRateLimiting(RateLimitSettings.AuthPolicy).Validate<LoginRequest>();
-        g.MapPost("/login/2fa", LoginTwoFactor).AllowAnonymous().RequireRateLimiting(RateLimitSettings.AuthPolicy).Validate<LoginTwoFactorRequest>();
+        g.MapPost("/login", Login).AllowAnonymous().RequireRateLimiting(AuthRateLimiting.Login).Validate<LoginRequest>();
+        g.MapPost("/login/2fa", LoginTwoFactor).AllowAnonymous().RequireRateLimiting(AuthRateLimiting.TwoFactor).Validate<LoginTwoFactorRequest>();
         g.MapPost("/logout", Logout).RequireAuthorization();
         g.MapGet("/me", Me).RequireAuthorization();
 
-        g.MapGet("/invite/{token}", GetInvite).AllowAnonymous().RequireRateLimiting(RateLimitSettings.AuthPolicy);
-        g.MapPost("/invite/accept", AcceptInvite).AllowAnonymous().RequireRateLimiting(RateLimitSettings.AuthPolicy).Validate<AcceptInviteRequest>();
-        g.MapPost("/password/forgot", ForgotPassword).AllowAnonymous().RequireRateLimiting(RateLimitSettings.AuthPolicy).Validate<ForgotPasswordRequest>();
-        g.MapPost("/password/reset", ResetPassword).AllowAnonymous().RequireRateLimiting(RateLimitSettings.AuthPolicy).Validate<ResetPasswordRequest>();
+        g.MapGet("/invite/{token}", GetInvite).AllowAnonymous().RequireRateLimiting(AuthRateLimiting.Invite);
+        g.MapPost("/invite/accept", AcceptInvite).AllowAnonymous().RequireRateLimiting(AuthRateLimiting.Invite).Validate<AcceptInviteRequest>();
+        g.MapPost("/password/forgot", ForgotPassword).AllowAnonymous().RequireRateLimiting(AuthRateLimiting.Forgot).Validate<ForgotPasswordRequest>();
+        g.MapPost("/password/reset", ResetPassword).AllowAnonymous().RequireRateLimiting(AuthRateLimiting.Reset).Validate<ResetPasswordRequest>();
 
         g.MapPost("/2fa/setup", SetupTwoFactor).RequireAuthorization();
-        g.MapPost("/2fa/enable", EnableTwoFactor).RequireAuthorization().RequireRateLimiting(RateLimitSettings.AuthPolicy).Validate<EnableTwoFactorRequest>();
+        g.MapPost("/2fa/enable", EnableTwoFactor).RequireAuthorization().RequireRateLimiting(AuthRateLimiting.TwoFactor).Validate<EnableTwoFactorRequest>();
 
         return g;
     }
@@ -51,8 +51,11 @@ public static class AuthEndpoints
 
     private static async Task<IResult> Login(
         LoginRequest req, UserManager<AppUser> users, SignInManager<AppUser> signIn, IPasswordHasher<AppUser> hasher,
-        MeService me, TimeProvider clock, CancellationToken ct)
+        MeService me, EmailRateLimiter emailLimits, TimeProvider clock, CancellationToken ct)
     {
+        // Counted before the lookup so unknown and existing emails are limited identically.
+        if (!emailLimits.TryLogin(req.Email)) return AuthRateLimiting.TooMany();
+
         var user = await users.FindByEmailAsync(req.Email.Trim());
         if (user is null)
         {
@@ -159,21 +162,26 @@ public static class AuthEndpoints
         return TypedResults.NoContent();
     }
 
-    private static async Task<Accepted> ForgotPassword(
+    private static async Task<IResult> ForgotPassword(
         ForgotPasswordRequest req, HtnDbContext db, UserManager<AppUser> users, IAccountTokenService tokens,
-        IAuditLog audit, TimeProvider clock, CancellationToken ct)
+        IAuditLog audit, EmailRateLimiter emailLimits, TimeProvider clock, CancellationToken ct)
     {
+        // Counted before the lookup so unknown and existing emails are limited identically.
+        if (!emailLimits.TryForgot(req.Email)) return AuthRateLimiting.TooMany();
+
         var user = await users.FindByEmailAsync(req.Email.Trim());
         if (user is { IsActive: true, PasswordHash: not null, PersonId: { } personId })
         {
             var person = await db.People.AsNoTracking().SingleOrDefaultAsync(p => p.Id == personId && p.IsActive, ct);
             if (person is not null)
             {
+                await using var tx = await db.Database.BeginTransactionAsync(ct);
                 var raw = await tokens.IssueAsync(user.Id, AccountTokenPurpose.PasswordReset, null, ct);
                 db.Outbox.Add(OutboxProcessor.PasswordResetEmail(
                     new PasswordResetEmailPayload(user.Id, user.Email!, person.FirstName), raw, clock.GetUtcNow()));
                 audit.Record(null, "user.password_reset_requested", nameof(AppUser), user.Id.ToString());
                 await db.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
             }
         }
 

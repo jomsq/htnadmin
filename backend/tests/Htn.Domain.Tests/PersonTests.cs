@@ -59,4 +59,15 @@ public sealed class PersonTests
     [InlineData(PersonLevel.Member, false)]
     public void Only_board_goon_apprentice_have_login(PersonLevel level, bool expected) =>
         Assert.Equal(expected, level.HasLogin());
+
+    [Fact]
+    public void Deactivate_records_trimmed_reason_and_limits_length()
+    {
+        var p = NewGoon();
+        Assert.Throws<DomainException>(() => p.Deactivate(Now, null, new string('x', Person.ReasonMaxLength + 1)));
+        Assert.True(p.IsActive);
+
+        p.Deactivate(Now, null, "  Left the org  ");
+        Assert.Equal("Left the org", p.History[^1].Reason);
+    }
 }

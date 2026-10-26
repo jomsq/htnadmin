@@ -22,4 +22,10 @@ public sealed class AppUser : IdentityUser<Guid>
 
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? LastSignInAt { get; set; }
+
+    /// <summary>
+    /// RFC 6238 time step (Unix seconds / 30) of the last accepted authenticator code. A code whose step is not
+    /// greater than this is rejected, so an observed code can't be replayed. Only written through an atomic update.
+    /// </summary>
+    public long? LastTotpTimeStep { get; set; }
 }

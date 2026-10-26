@@ -267,4 +267,87 @@ public sealed class PeopleEndpointsTests(HtnApiFactory factory) : IClassFixture<
             factory.DbAsync(db => db.Database.ExecuteSqlRawAsync("UPDATE audit_entries SET reason = 'tampered'")));
         Assert.Contains("append-only", ex.Message, StringComparison.Ordinal);
     }
+
+    private async Task<(string Tag, HtnApiFactory.TestUser Active, HtnApiFactory.TestUser Gone)> RosterWithDeactivatedAsync()
+    {
+        var tag = "Mask" + Guid.NewGuid().ToString("N")[..8];
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+        var active = await factory.CreateUserAsync(PersonLevel.Goon, email: $"{tag.ToLowerInvariant()}.active@hackthenorth.ph");
+        var gone = await factory.CreateUserAsync(PersonLevel.Goon, email: $"{tag.ToLowerInvariant()}.gone@hackthenorth.ph");
+        await factory.NewClient().LoginOkAsync(active.Email, HtnApiFactory.Password); // sets lastSignInAt
+        Assert.Equal(HttpStatusCode.NoContent, (await board.PostAsync($"/api/people/{gone.PersonId}/deactivate")).StatusCode);
+        // Names carry the tag so non-Board callers (who can't search by email) can find the rows.
+        await factory.DbAsync(db => db.People.Where(p => p.Id == active.PersonId || p.Id == gone.PersonId)
+            .ExecuteUpdateAsync(u => u.SetProperty(p => p.LastName, tag)));
+        return (tag, active, gone);
+    }
+
+    [Theory]
+    [InlineData(PersonLevel.Goon)]
+    [InlineData(PersonLevel.Apprentice)]
+    public async Task Non_board_list_masks_email_hides_account_fields_and_deactivated(PersonLevel level)
+    {
+        var (tag, active, _) = await RosterWithDeactivatedAsync();
+        var viewer = await factory.SignedInAsync(level);
+
+        var list = await ApiClient.JsonAsync(await viewer.GetAsync($"/api/people?search={tag}"));
+        Assert.Equal(1, list.GetProperty("total").GetInt32());
+        var item = Assert.Single(list.GetProperty("items").EnumerateArray());
+        Assert.Equal(active.PersonId, item.GetProperty("id").GetGuid());
+        Assert.Equal("m•••@hackthenorth.ph", item.GetProperty("email").GetString());
+        Assert.Equal(JsonValueKind.Null, item.GetProperty("accountStatus").ValueKind);
+        Assert.Equal(JsonValueKind.Null, item.GetProperty("lastSignInAt").ValueKind);
+        Assert.True(item.GetProperty("isActive").GetBoolean());
+
+        // Searching by the (hidden) email must not work as an oracle.
+        var byEmail = await ApiClient.JsonAsync(await viewer.GetAsync($"/api/people?search={Uri.EscapeDataString(active.Email)}"));
+        Assert.Equal(0, byEmail.GetProperty("total").GetInt32());
+    }
+
+    [Fact]
+    public async Task Board_list_has_full_email_account_fields_and_deactivated()
+    {
+        var (tag, active, gone) = await RosterWithDeactivatedAsync();
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+
+        var list = await ApiClient.JsonAsync(await board.GetAsync($"/api/people?search={tag}"));
+        Assert.Equal(2, list.GetProperty("total").GetInt32());
+        var items = list.GetProperty("items").EnumerateArray().ToDictionary(i => i.GetProperty("id").GetGuid());
+        Assert.Equal(active.Email, items[active.PersonId].GetProperty("email").GetString());
+        Assert.Equal("Active", items[active.PersonId].GetProperty("accountStatus").GetString());
+        Assert.Equal(JsonValueKind.String, items[active.PersonId].GetProperty("lastSignInAt").ValueKind);
+        Assert.Equal(gone.Email, items[gone.PersonId].GetProperty("email").GetString());
+        Assert.Equal("Deactivated", items[gone.PersonId].GetProperty("accountStatus").GetString());
+
+        var byEmail = await ApiClient.JsonAsync(await board.GetAsync($"/api/people?search={Uri.EscapeDataString(active.Email)}"));
+        Assert.Equal(1, byEmail.GetProperty("total").GetInt32());
+    }
+
+    [Fact]
+    public async Task Deactivate_records_optional_reason_in_audit_and_history()
+    {
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+        var target = await factory.CreateUserAsync(PersonLevel.Apprentice);
+
+        var tooLong = await board.PostAsync($"/api/people/{target.PersonId}/deactivate", new { reason = new string('x', 501) });
+        Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
+        Assert.True((await ApiClient.JsonAsync(tooLong)).GetProperty("errors").TryGetProperty("reason", out _));
+
+        var res = await board.PostAsync($"/api/people/{target.PersonId}/deactivate", new { reason = "  Left the organization  " });
+        Assert.Equal(HttpStatusCode.NoContent, res.StatusCode);
+
+        var audit = await factory.DbAsync(db => db.AuditEntries.AsNoTracking()
+            .SingleAsync(a => a.Action == "person.deactivate" && a.EntityId == target.PersonId.ToString()));
+        Assert.Equal("Left the organization", audit.Reason);
+        Assert.True(await factory.DbAsync(db => db.PersonHistory.AnyAsync(h =>
+            h.PersonId == target.PersonId && h.Kind == PersonHistoryKinds.Deactivated && h.Reason == "Left the organization")));
+    }
+
+    [Fact]
+    public async Task Goon_cannot_deactivate_even_with_a_reason()
+    {
+        var target = await factory.CreateUserAsync(PersonLevel.Member);
+        var goon = await factory.SignedInAsync(PersonLevel.Goon);
+        Assert.Equal(HttpStatusCode.Forbidden, (await goon.PostAsync($"/api/people/{target.PersonId}/deactivate", new { reason = "x" })).StatusCode);
+    }
 }

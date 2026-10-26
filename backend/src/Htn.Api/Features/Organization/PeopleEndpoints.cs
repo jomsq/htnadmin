@@ -1,5 +1,6 @@
 using Htn.Api.Auth;
 using Htn.Api.Common;
+using Htn.Domain.Common;
 using Htn.Domain.Organization;
 using Htn.Infrastructure.Audit;
 using Htn.Infrastructure.Data;
@@ -7,6 +8,7 @@ using Htn.Infrastructure.Email;
 using Htn.Infrastructure.Identity;
 using Htn.Infrastructure.Outbox;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -22,11 +24,12 @@ public static class PeopleEndpoints
         g.MapGet("/", List).RequireAuthorization(Policies.PeopleView);
         g.MapPost("/", Create).RequireAuthorization(Policies.PeopleManage).Validate<CreatePersonRequest>();
         g.MapPost("/{id:guid}/resend-invite", ResendInvite).RequireAuthorization(Policies.PeopleManage);
-        g.MapPost("/{id:guid}/deactivate", Deactivate).RequireAuthorization(Policies.PeopleManage);
+        g.MapPost("/{id:guid}/deactivate", Deactivate).RequireAuthorization(Policies.PeopleManage).ValidateOptional<DeactivatePersonRequest>();
         g.MapPost("/{id:guid}/send-password-reset", SendPasswordReset).RequireAuthorization(Policies.PeopleManage);
         return g;
     }
 
+    /// <summary>Full roster row, for Board callers (People.Manage).</summary>
     private static IQueryable<PersonDto> Project(HtnDbContext db, IQueryable<Person> people) =>
         from p in people
         join u in db.Users on (Guid?)p.Id equals u.PersonId into us
@@ -40,10 +43,22 @@ public static class PeopleEndpoints
             u != null ? u.LastSignInAt : null,
             p.CreatedAt);
 
+    /// <summary>
+    /// Data-minimized row for non-Board People.View callers: masked email, no account status or last sign-in.
+    /// The users table isn't read at all; the mask runs in the final (client-side) projection.
+    /// </summary>
+    private static IQueryable<PersonDto> ProjectLimited(IQueryable<Person> people) =>
+        from p in people
+        select new PersonDto(
+            p.Id, p.FirstName, p.MiddleName, p.LastName, EmailMask.Mask(p.Email), p.Level, p.Position, p.IsActive,
+            null, null, p.CreatedAt);
+
     private static async Task<IResult> List(
-        HtnDbContext db, string? level, string? search, int? page, int? pageSize, CancellationToken ct)
+        HttpContext http, HtnDbContext db, string? level, string? search, int? page, int? pageSize, CancellationToken ct)
     {
+        var full = http.User.IsInRole(Roles.Board);
         var q = db.People.AsNoTracking();
+        if (!full) q = q.Where(p => p.IsActive); // non-Board callers only see the active roster
 
         if (!string.IsNullOrWhiteSpace(level))
         {
@@ -57,10 +72,11 @@ public static class PeopleEndpoints
             var term = search.Trim();
             if (term.Length > 100) term = term[..100];
             var pattern = "%" + term.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+            // Non-Board callers can't search by email: matching on it would reveal the masked address.
             q = q.Where(p =>
                 EF.Functions.ILike(p.FirstName, pattern, "\\") ||
                 EF.Functions.ILike(p.LastName, pattern, "\\") ||
-                EF.Functions.ILike(p.Email, pattern, "\\") ||
+                (full && EF.Functions.ILike(p.Email, pattern, "\\")) ||
                 (p.Position != null && EF.Functions.ILike(p.Position, pattern, "\\")) ||
                 EF.Functions.ILike(p.FirstName + " " + p.LastName, pattern, "\\"));
         }
@@ -68,9 +84,8 @@ public static class PeopleEndpoints
         var size = Math.Clamp(pageSize ?? 25, 1, 100);
         var current = Math.Max(page ?? 1, 1);
         var total = await q.CountAsync(ct);
-        var items = await Project(db, q.OrderBy(p => p.LastName).ThenBy(p => p.FirstName).ThenBy(p => p.Id)
-                .Skip((current - 1) * size).Take(size))
-            .ToListAsync(ct);
+        var paged = q.OrderBy(p => p.LastName).ThenBy(p => p.FirstName).ThenBy(p => p.Id).Skip((current - 1) * size).Take(size);
+        var items = await (full ? Project(db, paged) : ProjectLimited(paged)).ToListAsync(ct);
 
         return TypedResults.Ok(new PagedResult<PersonDto>(items, total, current, size));
     }
@@ -156,17 +171,20 @@ public static class PeopleEndpoints
             return Problems.Result(StatusCodes.Status409Conflict, "This account is already active.", code: "already_active");
 
         var now = clock.GetUtcNow();
+        var inviter = await ActorName(db, me, ct);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
         var raw = await tokens.IssueAsync(user.Id, AccountTokenPurpose.Invite, me.Id, ct); // revokes the previous link
         db.Outbox.Add(OutboxProcessor.InviteEmail(
-            new InviteEmailPayload(user.Id, user.Email!, person.FirstName, await ActorName(db, me, ct), person.Level.ToString(), person.Position),
+            new InviteEmailPayload(user.Id, user.Email!, person.FirstName, inviter, person.Level.ToString(), person.Position),
             raw, now));
         audit.Record(me.Id, "person.invite_resent", nameof(Person), person.Id.ToString());
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return TypedResults.NoContent();
     }
 
     private static async Task<IResult> Deactivate(
-        Guid id, HtnDbContext db, UserManager<AppUser> users, IAccountTokenService tokens, IAuditLog audit,
+        Guid id, [FromBody] DeactivatePersonRequest? req, HtnDbContext db, UserManager<AppUser> users, IAccountTokenService tokens, IAuditLog audit,
         ICurrentUser me, TimeProvider clock, CancellationToken ct)
     {
         var person = await db.People.SingleOrDefaultAsync(p => p.Id == id, ct);
@@ -177,7 +195,8 @@ public static class PeopleEndpoints
             return Problems.Result(StatusCodes.Status409Conflict, "This person is already deactivated.", code: "person_deactivated");
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        person.Deactivate(clock.GetUtcNow(), me.Id, reason: null);
+        var reason = string.IsNullOrWhiteSpace(req?.Reason) ? null : req.Reason.Trim();
+        person.Deactivate(clock.GetUtcNow(), me.Id, reason);
 
         var user = await db.Users.SingleOrDefaultAsync(u => u.PersonId == id, ct);
         if (user is not null)
@@ -188,7 +207,7 @@ public static class PeopleEndpoints
         }
 
         audit.Record(me.Id, "person.deactivate", nameof(Person), person.Id.ToString(),
-            before: new { isActive = true }, after: new { isActive = false, userId = user?.Id });
+            before: new { isActive = true }, after: new { isActive = false, userId = user?.Id }, reason: reason);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return TypedResults.NoContent();
@@ -208,11 +227,13 @@ public static class PeopleEndpoints
         if (!user.IsActive || user.PasswordHash is null)
             return Problems.Result(StatusCodes.Status409Conflict, "This account isn't active yet. Resend the invite instead.", code: "not_active");
 
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
         var raw = await tokens.IssueAsync(user.Id, AccountTokenPurpose.PasswordReset, me.Id, ct);
         db.Outbox.Add(OutboxProcessor.PasswordResetEmail(
             new PasswordResetEmailPayload(user.Id, user.Email!, person.FirstName), raw, clock.GetUtcNow()));
         audit.Record(me.Id, "person.password_reset_sent", nameof(Person), person.Id.ToString(), after: new { userId = user.Id });
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return TypedResults.NoContent();
     }
 

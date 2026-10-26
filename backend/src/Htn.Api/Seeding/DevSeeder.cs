@@ -6,10 +6,17 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Htn.Api.Seeding;
 
-/// <summary>Development-only, idempotent sample data. Never runs outside Development.</summary>
+/// <summary>
+/// Development-only, idempotent sample data (including a Board account with a published password). Runs only when
+/// the environment is Development AND <c>Seed:Dev=true</c>, so a mis-set ASPNETCORE_ENVIRONMENT alone doesn't seed it.
+/// </summary>
 public static class DevSeeder
 {
     public const string DevPassword = "Dev-Password-123!";
+    public const string ConfigKey = "Seed:Dev";
+
+    public static bool ShouldRun(IHostEnvironment env, IConfiguration config) =>
+        env.IsDevelopment() && config.GetValue<bool>(ConfigKey);
 
     public static async Task SeedAsync(IServiceProvider services, CancellationToken ct = default)
     {

@@ -16,7 +16,7 @@ docker compose ps             # wait until all three are "healthy"
 - API: http://localhost:8080 (health: http://localhost:8080/health)
 - Postgres: localhost:5432 (database `htn`, user `htn`)
 
-Dev login: `alex@hackthenorth.ph` / `Dev-Password-123!`. Dev accounts are seeded **only** when `ASPNETCORE_ENVIRONMENT=Development`.
+Dev login: `alex@hackthenorth.ph` / `Dev-Password-123!`. Dev accounts are seeded **only** when `ASPNETCORE_ENVIRONMENT=Development` **and** `Seed__Dev=true` (the dev compose default). The api and web ports are bound to `127.0.0.1` only.
 
 Without `MAILTRAP_API_TOKEN` the API logs outgoing emails instead of sending them. To receive invites in the Mailtrap sandbox, set `MAILTRAP_API_TOKEN` and `MAILTRAP_INBOX_ID` in `.env`.
 
@@ -31,6 +31,14 @@ docker compose down -v                      # stop and DELETE the database volum
 # Production-like run: nginx serves the built SPA on http://localhost and proxies /api
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
+
+### Production settings
+
+Outside Development the API refuses to start unless these are set (see `docker-compose.prod.yml`):
+
+- `MAILTRAP_API_TOKEN` (or `Email__AllowLoggingSender=true` to only log emails, with masked recipients).
+- `DataProtection__CertificatePath` (+ `DataProtection__CertificatePassword`): a PFX with a private key, mounted into the api container, used to encrypt the Data Protection keys stored in Postgres. `DataProtection__AllowUnprotectedKeys=true` skips this; use it only for throwaway local runs. This one is enforced in Production only.
+- Forwarded headers: nginx overwrites `X-Forwarded-For` with the connecting address, and the API's auth rate limits key on it. Set `ForwardedHeaders__KnownNetworks` (CIDRs) or `ForwardedHeaders__KnownProxies` (IPs), comma-separated, to the nginx container's network. `ForwardedHeaders__ForwardLimit` defaults to 1. If a TLS terminator sits in front of nginx, enable nginx's realip module for it, otherwise every client shares one rate-limit bucket.
 
 Put machine-specific changes (other ports, file-watch polling) in `docker-compose.override.yml`, which Compose loads automatically. Don't edit the base file for these.
 

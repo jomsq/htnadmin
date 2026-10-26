@@ -1,6 +1,7 @@
 using Htn.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Htn.Infrastructure.Data.Configurations;
@@ -24,6 +25,9 @@ internal sealed class AppUserConfiguration : IEntityTypeConfiguration<AppUser>
         b.HasIndex(u => u.NormalizedEmail).HasDatabaseName("EmailIndex").IsUnique();
         b.HasOne(u => u.Person).WithMany().HasForeignKey(u => u.PersonId).OnDelete(DeleteBehavior.Restrict);
         b.Property(u => u.IsActive).HasDefaultValue(true);
+        // Written only by the authenticator provider's conditional ExecuteUpdate. Identity's UpdateAsync marks every
+        // property modified, so without this a stale in-memory value could move the replay guard backwards.
+        b.Property(u => u.LastTotpTimeStep).Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
         b.ComplexProperty(u => u.Preferences, p =>
         {
             p.Property(x => x.Mode).HasConversion<string>().HasMaxLength(16).HasColumnName("pref_mode");
@@ -98,6 +102,9 @@ internal sealed class AccountTokenConfiguration : IEntityTypeConfiguration<Accou
         b.Property(t => t.TokenHash).HasMaxLength(64).IsFixedLength();
         b.HasIndex(t => t.TokenHash).IsUnique();
         b.HasIndex(t => new { t.UserId, t.Purpose });
+        // At most one open (unused, unrevoked) token per user and purpose, even under concurrent issuing.
+        b.HasIndex(t => new { t.UserId, t.Purpose }, AccountTokenService.OpenTokenIndex).IsUnique().HasDatabaseName(AccountTokenService.OpenTokenIndex)
+            .HasFilter("used_at IS NULL AND revoked_at IS NULL");
         b.HasOne<AppUser>().WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("fk_account_tokens_users_user_id");
         b.HasOne<AppUser>().WithMany().HasForeignKey(t => t.IssuedById).OnDelete(DeleteBehavior.Restrict)
