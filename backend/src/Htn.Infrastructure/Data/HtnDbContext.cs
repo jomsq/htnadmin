@@ -1,5 +1,6 @@
 using Htn.Domain.Audit;
 using Htn.Domain.CheckIn;
+using Htn.Domain.Committees;
 using Htn.Domain.Events;
 using Htn.Domain.Files;
 using Htn.Domain.Organization;
@@ -32,6 +33,9 @@ public sealed class HtnDbContext(DbContextOptions<HtnDbContext> options)
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<PaymentProof> PaymentProofs => Set<PaymentProof>();
     public DbSet<CheckInScan> CheckInScans => Set<CheckInScan>();
+    public DbSet<Committee> Committees => Set<Committee>();
+    public DbSet<CommitteeMember> CommitteeMembers => Set<CommitteeMember>();
+    public DbSet<EventVolunteer> EventVolunteers => Set<EventVolunteer>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<OutboxMessage> Outbox => Set<OutboxMessage>();
     public DbSet<AccountToken> AccountTokens => Set<AccountToken>();
@@ -72,7 +76,8 @@ public sealed class HtnDbContext(DbContextOptions<HtnDbContext> options)
             if (entry.State == EntityState.Deleted && entry.Entity is Person)
                 throw new InvalidOperationException("People are deactivated, never deleted.");
             if (entry.State == EntityState.Deleted && entry.Entity is Position or PositionAssignment or PaymentAccount or StoredFile or Domain.Settings.OrgSettings
-                    or Event or TicketType or Voucher or Registration or Attendee or Payment or PaymentProof)
+                    or Event or TicketType or Voucher or Registration or Attendee or Payment or PaymentProof
+                    or Committee or CommitteeMember or EventVolunteer)
                 throw new InvalidOperationException($"{entry.Entity.GetType().Name} rows are never deleted.");
         }
     }

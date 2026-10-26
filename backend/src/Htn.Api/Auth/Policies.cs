@@ -44,9 +44,14 @@ public static class Policies
         FinanceView, FinancePost, FinanceApprove, FinanceRequest, SettingsManage, SettingsPersonal,
     ];
 
+    /// <summary>Board-only, for routes that need a second, coarser gate next to a resource-scoped policy.</summary>
+    public static readonly AuthorizationPolicy BoardOnly =
+        new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireRole(Roles.Board).Build();
+
     /// <summary>
-    /// Phase 1 implements People.* and Settings.Personal; Phase 3 adds Events.View and CheckIn.Scan (any signed-in Board/Goon/Apprentice). Everything else is registered as Board-only
-    /// (Finance.Post/Approve as CFO-only) until its slice adds the scoped handlers.
+    /// Phase 1 implements People.* and Settings.Personal; Phase 3 adds Events.View and CheckIn.Scan (any signed-in
+    /// Board/Goon/Apprentice); Phase 4A adds the four resource-scoped committee/task policies. Everything else is
+    /// registered as Board-only (Finance.Post/Approve as CFO-only) until its slice adds the scoped handlers.
     /// </summary>
     public static AuthorizationBuilder AddHtnPolicies(this AuthorizationBuilder auth)
     {
@@ -62,7 +67,24 @@ public static class Policies
         auth.AddPolicy(FinancePost, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board).RequireClaim(HtnClaimTypes.Cfo, "true"));
         auth.AddPolicy(FinanceApprove, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board).RequireClaim(HtnClaimTypes.Cfo, "true"));
 
-        string[] implemented = [PeopleView, PeopleManage, SettingsPersonal, EventsView, CheckInScan, FinancePost, FinanceApprove];
+        // Resource-scoped (see CommitteeScopedHandler). The role list is the coarse gate: Committees.ManageMembers and
+        // Tasks.Manage can only ever be held by the board or a committee lead, who is always a goon. The requirement
+        // then decides per committee / event / task, and with no resource it answers "may be allowed" for
+        // /api/auth/me, which is why the payloads carry explicit canManage flags.
+        auth.AddPolicy(CommitteesManageMembers, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board, Roles.Goon)
+            .AddRequirements(new CommitteeScopedRequirement(CommitteeAccess.ManageMembers)));
+        auth.AddPolicy(TasksManage, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board, Roles.Goon)
+            .AddRequirements(new CommitteeScopedRequirement(CommitteeAccess.TasksManage)));
+        auth.AddPolicy(TasksWork, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board, Roles.Goon, Roles.Apprentice)
+            .AddRequirements(new CommitteeScopedRequirement(CommitteeAccess.TasksWork)));
+        auth.AddPolicy(TasksViewBoard, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board, Roles.Goon, Roles.Apprentice)
+            .AddRequirements(new CommitteeScopedRequirement(CommitteeAccess.ViewBoard)));
+
+        string[] implemented =
+        [
+            PeopleView, PeopleManage, SettingsPersonal, EventsView, CheckInScan, FinancePost, FinanceApprove,
+            CommitteesManageMembers, TasksManage, TasksWork, TasksViewBoard,
+        ];
         foreach (var name in All.Except(implemented))
             auth.AddPolicy(name, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board));
 

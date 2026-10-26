@@ -10,8 +10,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Htn.Api.Tests.Registrations;
 
 /// <summary>
-/// Registrations_IntegrityGuards on a database that already has data: roll back to CheckIn, write the dev seed (all
-/// statuses, a team, a comp, a cancellation) plus a check-in, then migrate up again. Every NOT VALID constraint must
+/// Registrations_IntegrityGuards on a database that already has data: write the dev seed (all statuses, a team, a
+/// comp, a cancellation) plus a check-in, roll back to CheckIn, then migrate up again. Every NOT VALID constraint must
 /// VALIDATE against those rows, and the triggers and keys must be in place afterwards.
 /// </summary>
 public sealed class IntegrityMigrationTests(HtnApiFactory factory) : IClassFixture<HtnApiFactory>
@@ -21,15 +21,16 @@ public sealed class IntegrityMigrationTests(HtnApiFactory factory) : IClassFixtu
     [Fact]
     public async Task Migration_validates_against_existing_seed_data_and_rolls_back_cleanly()
     {
+        // Seed on the current schema (the dev seed also fills tables that later migrations add), then roll back.
+        await DevSeeder.SeedAsync(factory.Services);
+        await factory.SeedCheckInAsync(HtnApiFactory.UniqueEmail("seeded"));
+
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<HtnDbContext>();
             await db.GetService<IMigrator>().MigrateAsync(Previous);
             Assert.False(await TriggerExistsAsync(db, "registrations_guard"));
         }
-
-        await DevSeeder.SeedAsync(factory.Services);
-        await factory.SeedCheckInAsync(HtnApiFactory.UniqueEmail("seeded"));
 
         await using (var scope = factory.Services.CreateAsyncScope())
         {

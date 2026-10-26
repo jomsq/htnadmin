@@ -3,6 +3,7 @@ using Htn.Api.Auth;
 using Htn.Api.Common;
 using Htn.Api.Features.Auth;
 using Htn.Api.Features.CheckIn;
+using Htn.Api.Features.Committees;
 using Htn.Api.Features.Events;
 using Htn.Api.Features.Organization;
 using Htn.Api.Features.Registrations;
@@ -15,6 +16,7 @@ using Htn.Infrastructure.Identity;
 using Htn.Infrastructure.Tickets;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -116,6 +118,13 @@ builder.Services.AddHtnRateLimiting();
 ValidationExtensions.UseCamelCasePropertyNames();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>(includeInternalTypes: true);
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+// Resource-scoped authorization: the caller's committee memberships, cached per request, behind one handler for
+// Committees.ManageMembers, Tasks.Manage, Tasks.Work and Tasks.ViewBoard.
+builder.Services.AddScoped<ICommitteeContext, CommitteeContext>();
+builder.Services.AddScoped<IAuthorizationHandler, CommitteeScopedHandler>();
+// Slice 4A has no tasks: task-scoped checks fail closed and open-task counts are 0. Slice 4B replaces both.
+builder.Services.AddScoped<ITaskScopeResolver, NoTasksYetScopeResolver>();
+builder.Services.AddScoped<ICommitteeOpenTasks, NoTasksYetOpenTasks>();
 builder.Services.AddScoped<MeService>();
 builder.Services.AddScoped<AccountProvisioning>();
 builder.Services.AddScoped<Checkout>();
@@ -150,6 +159,8 @@ app.MapEventEmailSettings();
 app.MapRegistrations();
 app.MapPublicRegistration();
 app.MapCheckIn();
+app.MapCommittees();
+app.MapEventVolunteers();
 
 var migrate = app.Configuration.GetValue("Database:MigrateOnStartup", app.Environment.IsDevelopment());
 if (migrate)

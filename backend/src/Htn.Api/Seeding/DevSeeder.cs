@@ -1,4 +1,5 @@
 using Htn.Domain.Common;
+using Htn.Domain.Committees;
 using Htn.Domain.Events;
 using Htn.Domain.Registrations;
 using Htn.Domain.Organization;
@@ -34,9 +35,13 @@ public static class DevSeeder
         await EnsureAsync(db, users, clock, "Mika", "Soriano", "mika@hackthenorth.ph", PersonLevel.Goon, "Head of Logistics", ct);
         await EnsureAsync(db, users, clock, "Paolo", "Garcia", "paolo@hackthenorth.ph", PersonLevel.Member, null, ct);
         await EnsureAsync(db, users, clock, "Leo", "Navarro", "leo@hackthenorth.ph", PersonLevel.Board, "Treasurer", ct);
+        // Frame 06: a committee member and someone left in the "Not yet assigned" pool.
+        await EnsureAsync(db, users, clock, "Ana", "Bautista", "ana@hackthenorth.ph", PersonLevel.Apprentice, null, ct);
+        await EnsureAsync(db, users, clock, "Ken", "Morales", "ken@hackthenorth.ph", PersonLevel.Goon, "Head of Tech", ct);
         await EnsurePositionsAsync(db, clock, ct);
         await EnsureEventsAsync(db, clock, ct);
         await EnsureRegistrationsAsync(db, sp.GetRequiredService<IPublicIdGenerator>(), clock, ct);
+        await EnsureCommitteesAsync(db, clock, ct);
         logger.LogInformation("Development seed data is in place");
     }
 
@@ -120,6 +125,56 @@ public static class DevSeeder
                 "UP Diliman, Quezon City", 200, "A capture-the-flag competition for student teams.", now, null));
             await db.SaveChangesAsync(ct);
         }
+    }
+
+    /// <summary>The six committees of frame 06, in the order the design shows them.</summary>
+    public static readonly string[] SampleCommittees =
+        ["Logistics", "Programs", "Partnerships", "Marketing", "Registration & Check-in", "Tech & AV"];
+
+    /// <summary>
+    /// Committees of HTN Con 2026 (frame 06): the six teams, Mika Soriano leading Logistics with Ana Bautista as a
+    /// member, and two volunteers (one on Logistics, one left in the pool). Each piece is skipped when it already
+    /// exists, so re-seeding changes nothing.
+    /// </summary>
+    private static async Task EnsureCommitteesAsync(HtnDbContext db, TimeProvider clock, CancellationToken ct)
+    {
+        var con = await db.Events.AsNoTracking().SingleOrDefaultAsync(e => e.Slug == SampleEventSlug, ct);
+        if (con is null) return;
+        var now = clock.GetUtcNow();
+
+        var existing = await db.Committees.Where(c => c.EventId == con.Id).ToListAsync(ct);
+        var order = existing.Count == 0 ? 0 : existing.Max(c => c.SortOrder);
+        foreach (var name in SampleCommittees.Where(n => !existing.Any(c => c.Name == n)))
+        {
+            var committee = Committee.Create(con.Id, name, ++order, now);
+            db.Committees.Add(committee);
+            existing.Add(committee);
+        }
+        await db.SaveChangesAsync(ct);
+
+        var logistics = existing.Single(c => c.Name == "Logistics");
+        var mika = await db.People.AsNoTracking().Where(p => p.Email == "mika@hackthenorth.ph").Select(p => (Guid?)p.Id).SingleOrDefaultAsync(ct);
+        var ana = await db.People.AsNoTracking().Where(p => p.Email == "ana@hackthenorth.ph").Select(p => (Guid?)p.Id).SingleOrDefaultAsync(ct);
+        foreach (var (personId, role) in new[] { (mika, CommitteeRole.Lead), (ana, CommitteeRole.Member) })
+        {
+            if (personId is not { } id) continue;
+            if (await db.CommitteeMembers.AnyAsync(m => m.EventId == con.Id && m.PersonId == id && m.LeftAt == null, ct)) continue;
+            db.CommitteeMembers.Add(CommitteeMember.Join(logistics, id, role, now));
+            if (role == CommitteeRole.Lead) logistics.SetLead(id);
+        }
+
+        foreach (var (name, email, committee) in new (string, string?, Committee?)[]
+                 {
+                     ("Carla Diaz", "carla.diaz@example.ph", logistics),
+                     ("Pia Santos", null, null),
+                 })
+        {
+            if (await db.EventVolunteers.AnyAsync(v => v.EventId == con.Id && v.Name == name, ct)) continue;
+            var volunteer = EventVolunteer.Create(con.Id, name, email, "+639171234567", now);
+            volunteer.AttachTo(committee);
+            db.EventVolunteers.Add(volunteer);
+        }
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>

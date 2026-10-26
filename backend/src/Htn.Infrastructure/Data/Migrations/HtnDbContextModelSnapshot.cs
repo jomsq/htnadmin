@@ -150,6 +150,220 @@ namespace Htn.Infrastructure.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Htn.Domain.Committees.Committee", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeactivatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deactivated_at");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<Guid?>("LeadPersonId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("lead_person_id");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("name");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.HasKey("Id")
+                        .HasName("pk_committees");
+
+                    b.HasAlternateKey("Id", "EventId")
+                        .HasName("ak_committees_id_event_id");
+
+                    b.HasIndex("LeadPersonId")
+                        .HasDatabaseName("ix_committees_lead_person_id")
+                        .HasFilter("lead_person_id IS NOT NULL");
+
+                    b.HasIndex("EventId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ux_committees_event_name");
+
+                    b.HasIndex("EventId", "SortOrder")
+                        .HasDatabaseName("ix_committees_event_id_sort_order");
+
+                    b.ToTable("committees", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_committees_deactivated", "is_active = (deactivated_at IS NULL)");
+
+                            t.HasCheckConstraint("ck_committees_lead", "is_active OR lead_person_id IS NULL");
+
+                            t.HasCheckConstraint("ck_committees_name", "char_length(name) BETWEEN 1 AND 60 AND name = btrim(name)");
+
+                            t.HasCheckConstraint("ck_committees_sort_order", "sort_order BETWEEN 0 AND 1000");
+                        });
+                });
+
+            modelBuilder.Entity("Htn.Domain.Committees.CommitteeMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("CommitteeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("committee_id");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<DateTimeOffset>("JoinedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("joined_at");
+
+                    b.Property<DateTimeOffset?>("LeftAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("left_at");
+
+                    b.Property<Guid>("PersonId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("person_id");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("role");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_committee_members");
+
+                    b.HasIndex("CommitteeId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_committee_members_active_lead")
+                        .HasFilter("left_at IS NULL AND role = 'Lead'");
+
+                    b.HasIndex("PersonId")
+                        .HasDatabaseName("ix_committee_members_person_id");
+
+                    b.HasIndex("CommitteeId", "EventId")
+                        .HasDatabaseName("ix_committee_members_committee_id_event_id");
+
+                    b.HasIndex("CommitteeId", "JoinedAt")
+                        .HasDatabaseName("ix_committee_members_committee_id_joined_at");
+
+                    b.HasIndex("EventId", "PersonId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_committee_members_active_person")
+                        .HasFilter("left_at IS NULL");
+
+                    b.ToTable("committee_members", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_committee_members_left", "left_at IS NULL OR left_at >= joined_at");
+
+                            t.HasCheckConstraint("ck_committee_members_role", "role IN ('Lead', 'Member')");
+                        });
+                });
+
+            modelBuilder.Entity("Htn.Domain.Committees.EventVolunteer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("CommitteeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("committee_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeactivatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deactivated_at");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)")
+                        .HasColumnName("email");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Mobile")
+                        .HasMaxLength(13)
+                        .HasColumnType("character varying(13)")
+                        .HasColumnName("mobile");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_event_volunteers");
+
+                    b.HasIndex("CommitteeId")
+                        .HasDatabaseName("ix_event_volunteers_committee_id")
+                        .HasFilter("committee_id IS NOT NULL");
+
+                    b.HasIndex("CommitteeId", "EventId")
+                        .HasDatabaseName("ix_event_volunteers_committee_id_event_id");
+
+                    b.HasIndex("EventId", "Name")
+                        .HasDatabaseName("ix_event_volunteers_event_id_name");
+
+                    b.ToTable("event_volunteers", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_event_volunteers_committee", "is_active OR committee_id IS NULL");
+
+                            t.HasCheckConstraint("ck_event_volunteers_deactivated", "is_active = (deactivated_at IS NULL)");
+
+                            t.HasCheckConstraint("ck_event_volunteers_email", "email IS NULL OR (char_length(email) BETWEEN 3 AND 254 AND email = lower(email) AND email ~ '^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$')");
+
+                            t.HasCheckConstraint("ck_event_volunteers_mobile", "mobile IS NULL OR mobile ~ '^\\+639[0-9]{9}$'");
+
+                            t.HasCheckConstraint("ck_event_volunteers_name", "char_length(name) BETWEEN 1 AND 120 AND name = btrim(name)");
+                        });
+                });
+
             modelBuilder.Entity("Htn.Domain.Events.Event", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1962,6 +2176,57 @@ namespace Htn.Infrastructure.Data.Migrations
                         .HasPrincipalKey("Id", "EventId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_check_in_scans_attendees_attendee_id_event_id");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Committees.Committee", b =>
+                {
+                    b.HasOne("Htn.Domain.Events.Event", null)
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_committees_events_event_id");
+
+                    b.HasOne("Htn.Domain.Organization.Person", null)
+                        .WithMany()
+                        .HasForeignKey("LeadPersonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_committees_people_lead_person_id");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Committees.CommitteeMember", b =>
+                {
+                    b.HasOne("Htn.Domain.Organization.Person", null)
+                        .WithMany()
+                        .HasForeignKey("PersonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_committee_members_people_person_id");
+
+                    b.HasOne("Htn.Domain.Committees.Committee", null)
+                        .WithMany()
+                        .HasForeignKey("CommitteeId", "EventId")
+                        .HasPrincipalKey("Id", "EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_committee_members_committees_committee_id_event_id");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Committees.EventVolunteer", b =>
+                {
+                    b.HasOne("Htn.Domain.Events.Event", null)
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_event_volunteers_events_event_id");
+
+                    b.HasOne("Htn.Domain.Committees.Committee", null)
+                        .WithMany()
+                        .HasForeignKey("CommitteeId", "EventId")
+                        .HasPrincipalKey("Id", "EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_event_volunteers_committees_committee_id_event_id");
                 });
 
             modelBuilder.Entity("Htn.Domain.Events.Event", b =>

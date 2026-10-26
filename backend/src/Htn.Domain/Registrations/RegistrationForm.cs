@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Htn.Domain.Common;
 
 namespace Htn.Domain.Registrations;
 
@@ -26,37 +27,20 @@ public static partial class RegistrationForm
     public const string ConsentText =
         "I agree to the event terms and the processing of my data under the Data Privacy Act of 2012.";
 
-    /// <summary>
-    /// Person names: Unicode letters and combining marks, spaces, and . , ' ’ - (e.g. "Ma. Niña Dela Cruz-Ñañez", "O'Brien", "Santos, Jr.").
-    /// Must start with a letter. Rules out links, emails and markup (no ':', '/', '@', '&lt;', '&gt;', digits or control characters).
-    /// </summary>
-    [GeneratedRegex(@"^\p{L}[\p{L}\p{M} .,'\u2019-]*\z", RegexOptions.CultureInvariant)]
-    private static partial Regex NameRegex();
-
     /// <summary>Occupation and company: as names, plus digits and &amp; , ( ) / (e.g. "DICT Region 1", "R&amp;D (IT/Security)").</summary>
     [GeneratedRegex(@"^[\p{L}\p{N}][\p{L}\p{M}\p{N} .'\u2019&,()/-]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex OrgTextRegex();
 
-    public const string NameMessage = "Use letters, spaces, periods, commas, apostrophes and hyphens only.";
+    /// <summary>Person names follow <see cref="PersonNameRules"/>, shared with event volunteer names.</summary>
+    public const string NameMessage = PersonNameRules.Message;
     public const string OrgTextMessage = "Use letters, numbers, spaces and . , ' - & ( ) / only.";
 
     /// <summary>A trimmed person name that passes the character rules (length is checked separately).</summary>
-    public static bool IsValidName(string? value) => value is null || (NameRegex().IsMatch(value.Trim()) && !HasLinkOrMarkup(value));
+    public static bool IsValidName(string? value) => PersonNameRules.IsValidName(value);
 
     /// <summary>A trimmed occupation or company that passes the character rules (length is checked separately).</summary>
     public static bool IsValidOrgText(string? value) =>
-        value is null || (OrgTextRegex().IsMatch(value.Trim()) && !HasLinkOrMarkup(value) && !SlashTouchesDottedToken(value));
-
-    private static bool HasLinkOrMarkup(string value) =>
-        value.Contains("://", StringComparison.Ordinal) || value.IndexOfAny(['@', '<', '>']) >= 0 || value.Any(char.IsControl)
-        || DotJoinsWord().IsMatch(value);
-
-    /// <summary>
-    /// A '.' directly followed by a letter or digit ("gcash-ph.com", "Ma.Niña"): domain-like. An abbreviation is followed
-    /// by a space, comma, hyphen or the end ("Ma. Niña", "Santos, Jr.", "St. Luke's").
-    /// </summary>
-    [GeneratedRegex(@"\.[\p{L}\p{N}]", RegexOptions.CultureInvariant)]
-    private static partial Regex DotJoinsWord();
+        value is null || (OrgTextRegex().IsMatch(value.Trim()) && !PersonNameRules.HasLinkOrMarkup(value) && !SlashTouchesDottedToken(value));
 
     /// <summary>Org text: a '/' touching a dotted token ("Inc./Ltd", "x./y") reads like a path or link.</summary>
     private static bool SlashTouchesDottedToken(string value) =>

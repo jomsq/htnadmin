@@ -11,13 +11,36 @@ Members and volunteers have no login.
 
 Each capability below is a **named policy** in `Htn.Api/Auth/Policies.cs`. Resource-scoped ones use an `IAuthorizationHandler` that loads the event, committee or pop-up. Every endpoint must call `.RequireAuthorization(Policies.X)`.
 
+### How the committee-scoped policies work (Phase 4A)
+`Committees.ManageMembers`, `Tasks.Manage`, `Tasks.Work` and `Tasks.ViewBoard` are one requirement
+(`CommitteeScopedRequirement`) handled by `CommitteeScopedHandler`, which reads the caller's memberships from
+`ICommitteeContext` (scoped, loaded once per request, active rows of active committees only).
+
+| Resource passed to `AuthorizeAsync` | Decision (board members always pass) |
+|---|---|
+| `CommitteeScope(committeeId)` | manage: lead of that committee · work: on that committee · view: on that committee or a sibling committee of its event |
+| `EventScope(eventId)` | manage: leads a committee of that event · work/view: on a committee of that event |
+| `TaskScope(taskId)` | resolved by `ITaskScopeResolver` (Phase 4B); until then every task-scoped check fails closed |
+| none, or the `HttpContext` that `.RequireAuthorization(...)` passes | **"may be allowed"**: leads something (manage) / is on something (work, view). This is the coarse route gate, and what `/api/auth/me` reports |
+
+Routes carry the named policy as the coarse gate; where the committee is only known after the row is loaded, the
+endpoint re-runs the same policy against the real resource and returns 403 (`ScopedAuthorization.DenyAsync`).
+Because the flat list in `/api/auth/me` can only say "may be allowed", every payload that drives buttons carries
+explicit per-resource flags (`canManage`, `canCreateCommittee`, `canManageVolunteers`, later `canMove`, `canEdit`,
+`canWork`, `canApprove`, `canComment`).
+
+Creating, renaming, re-leading and deactivating a **committee** is board-only (a lead manages the people on their own
+committee, not the committee itself), so those routes add a second board-only gate next to the scoped policy.
+A committee **lead must be an active goon**; committee **members need an active login** (Board, Goon or Apprentice).
+Volunteers have no login: they are per-event records managed by the board or the lead of the committee they are on.
+
 | Policy | Board (admin) | Committee lead | Goon | Apprentice |
 |---|---|---|---|---|
 | `People.Manage` (create accounts, levels, promotions, positions) | ✓ | — | — | — |
 | `People.View` | ✓ | view | view | view |
 | `Events.Manage` (event, tickets, vouchers, settings) | ✓ | — | — | — |
 | `Events.View` (events list and details; Drafts and vouchers only with `Events.Manage`) | ✓ | ✓ | ✓ | ✓ |
-| `Committees.ManageMembers` | ✓ | own committee | — | — |
+| `Committees.ManageMembers` (add/remove members and volunteers; create/rename/deactivate a committee and set its lead are board-only) | ✓ | own committee | — | — |
 | `Tasks.Manage` (create, assign, set points, approve to Done) | ✓ | own committee | — | — |
 | `Tasks.Work` (move own cards, comment, checklist) | ✓ | ✓ | own tasks | own tasks |
 | `Tasks.ViewBoard` | ✓ | ✓ | events they're on | events they're on |

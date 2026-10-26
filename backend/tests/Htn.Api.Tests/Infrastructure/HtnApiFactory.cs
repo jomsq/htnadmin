@@ -76,8 +76,12 @@ public class HtnApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         {
             services.RemoveAll<IEmailSender>();
             services.AddSingleton<IEmailSender>(Emails);
+            ConfigureTestOverrides(services);
         });
     }
+
+    /// <summary>Per-fixture service replacements (e.g. a stub for a seam a later slice fills in).</summary>
+    protected virtual void ConfigureTestOverrides(IServiceCollection services) { }
 
     public ApiClient NewClient() => new(CreateClient(new WebApplicationFactoryClientOptions
     {
