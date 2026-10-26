@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 // Requires the full stack (docker compose up) with the dev seed admin.
-const email = process.env.E2E_ADMIN_EMAIL ?? 'admin@hackthenorth.ph'
+const email = process.env.E2E_ADMIN_EMAIL ?? 'alex@hackthenorth.ph'
 const password = process.env.E2E_ADMIN_PASSWORD ?? ''
 
 test('admin signs in and lands on the dashboard', async ({ page }) => {

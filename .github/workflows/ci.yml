@@ -128,3 +128,79 @@ jobs:
           tags: htnadmin-web:ci
           cache-from: type=gha,scope=web
           cache-to: type=gha,scope=web,mode=max
+
+  e2e:
+    name: E2E (Playwright against docker compose)
+    # PRs only: the stack build is slow, and main is only reached through PRs.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Throwaway CI-only database; the stack runs on the runner's loopback and is destroyed at the end.
+      POSTGRES_PASSWORD: ci-e2e-only
+      E2E_BASE_URL: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pin dev-only API settings for the e2e run
+        # Development + dev seed (alex@hackthenorth.ph, HTN Con 2026, STUDENT20), board 2FA off, and no Mailtrap token
+        # so every email goes to the logging sender. Nothing here is valid outside this job.
+        run: |
+          cat > "$RUNNER_TEMP/compose.e2e.yml" <<'YAML'
+          services:
+            api:
+              environment:
+                ASPNETCORE_ENVIRONMENT: Development
+                Seed__Dev: "true"
+                Auth__RequireBoard2fa: "false"
+                MAILTRAP_API_TOKEN: ""
+          YAML
+
+      - name: Start stack
+        run: docker compose -f docker-compose.yml -f "$RUNNER_TEMP/compose.e2e.yml" up -d --build --wait --wait-timeout 600
+
+      - name: Wait for API /health and web
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/health >/dev/null && curl -fsS http://localhost:5173/ >/dev/null; then
+              echo "Stack is up"; exit 0
+            fi
+            sleep 5
+          done
+          echo "Stack did not become healthy" >&2
+          exit 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install test dependencies
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright
+        working-directory: frontend
+        run: npx playwright test
+
+      - name: Stack logs
+        if: failure()
+        run: docker compose -f docker-compose.yml -f "$RUNNER_TEMP/compose.e2e.yml" logs --no-color --tail 500 api web
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Stop stack
+        if: always()
+        run: docker compose -f docker-compose.yml -f "$RUNNER_TEMP/compose.e2e.yml" down -v
