@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { api } from '@/app/api'
+import { api, apiVoid } from '@/app/api'
 import {
   myTasksSchema,
   taskBoardSchema,
@@ -97,10 +97,11 @@ function moveCardInBoard(board: TaskBoard, taskId: string, status: TaskStatus): 
       if (column.status === status) {
         if (column.cards.some((c) => c.id === taskId)) return column
         const cards = [...column.cards, { ...card, status }]
-        return { ...column, cards, count: cards.length }
+        // `count` is the column's real total, which can be larger than `cards` (Done is capped), so it moves by one.
+        return { ...column, cards, count: column.count + 1 }
       }
       const cards = column.cards.filter((c) => c.id !== taskId)
-      return cards.length === column.cards.length ? column : { ...column, cards, count: cards.length }
+      return cards.length === column.cards.length ? column : { ...column, cards, count: Math.max(0, column.count - 1) }
     }),
   }
 }
@@ -167,6 +168,15 @@ export function useReopenTaskMutation(taskId: string) {
   return useDetailMutation(taskId, ({ reason, status }: { reason: string; status?: TaskStatus }) =>
     api(`${taskPath(taskId)}/reopen`, taskDetailSchema, { method: 'POST', body: status ? { reason, status } : { reason } }),
   )
+}
+
+/** Archiving takes the card off the board (204, no detail back). Refused while the task holds live awards. */
+export function useArchiveTaskMutation(taskId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ reason }: { reason: string }) => apiVoid(`${taskPath(taskId)}/archive`, { method: 'POST', body: { reason } }),
+    onSuccess: () => invalidateTask(queryClient, taskId),
+  })
 }
 
 export function useAddAssigneeMutation(taskId: string) {

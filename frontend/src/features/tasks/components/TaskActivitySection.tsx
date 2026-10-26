@@ -1,6 +1,7 @@
 import { useId, useMemo, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { isApiError } from '@/app/api'
 import { errorMessage } from '@/app/errors'
 import { Avatar } from '@/components/ui/Avatar'
 import { Button } from '@/components/ui/Button'
@@ -51,6 +52,8 @@ export function TaskActivitySection({ task }: { task: TaskDetail }) {
   const [dismissed, setDismissed] = useState(false)
   const [active, setActive] = useState(0)
   const [picked, setPicked] = useState<Candidate[]>([])
+  // The server re-checks every mention against the people who can see the board (400 on mentionPersonIds).
+  const [mentionError, setMentionError] = useState<string | null>(null)
 
   const {
     register,
@@ -76,6 +79,7 @@ export function TaskActivitySection({ task }: { task: TaskDetail }) {
 
   function insert(candidate: Candidate) {
     if (!fragment) return
+    setMentionError(null)
     const before = body.slice(0, fragment.start)
     const after = body.slice(caret)
     const next = `${before}@${candidate.name} ${after}`
@@ -94,6 +98,7 @@ export function TaskActivitySection({ task }: { task: TaskDetail }) {
 
   const onSubmit = handleSubmit(({ body: value }) => {
     if (addComment.isPending) return
+    setMentionError(null)
     const text = value.trim()
     // Only mentions still written in the comment are sent; the server emails them.
     const mentionPersonIds = picked.filter((p) => text.includes(`@${p.name}`)).map((p) => p.personId)
@@ -105,7 +110,16 @@ export function TaskActivitySection({ task }: { task: TaskDetail }) {
           setPicked([])
           toast({ tone: 'success', title: 'Comment added.' })
         },
-        onError: (e) => toast({ tone: 'error', title: 'Could not add the comment.', description: errorMessage(e) }),
+        onError: (e) => {
+          // A mention the server refuses belongs on the mention field, not in a toast that leaves no trace.
+          const onMentions = isApiError(e, 400) ? e.fieldErrors.mentionPersonIds : undefined
+          if (onMentions) {
+            // role="alert" announces it; the comment text is kept so the mention can be fixed.
+            setMentionError(onMentions)
+            return
+          }
+          toast({ tone: 'error', title: 'Could not add the comment.', description: errorMessage(e) })
+        },
       },
     )
   })
@@ -129,8 +143,10 @@ export function TaskActivitySection({ task }: { task: TaskDetail }) {
               id={fieldId}
               rows={2}
               placeholder="Write a comment. Use @ to mention someone."
-              aria-invalid={errors.body ? true : undefined}
-              aria-describedby={errors.body ? `${fieldId}-error` : undefined}
+              aria-invalid={errors.body || mentionError ? true : undefined}
+              aria-describedby={
+                [errors.body ? `${fieldId}-error` : null, mentionError ? `${fieldId}-mentions` : null].filter(Boolean).join(' ') || undefined
+              }
               role="combobox"
               aria-expanded={open}
               aria-controls={open ? listId : undefined}
@@ -185,6 +201,11 @@ export function TaskActivitySection({ task }: { task: TaskDetail }) {
           {errors.body ? (
             <p id={`${fieldId}-error`} className="text-xs font-medium text-red-700 dark:text-red-400">
               {errors.body.message}
+            </p>
+          ) : null}
+          {mentionError ? (
+            <p id={`${fieldId}-mentions`} role="alert" className="text-xs font-medium text-red-700 dark:text-red-400">
+              Mentions: {mentionError}
             </p>
           ) : null}
           <div className="flex items-center gap-3">

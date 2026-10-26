@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { errorMessage } from '@/app/errors'
+import { useEffect, useId, useState } from 'react'
+import { NEEDS_OTHER_APPROVER_MESSAGE, errorMessage } from '@/app/errors'
 import { Alert } from '@/components/ui/Alert'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -10,11 +10,13 @@ import { formatEventDay } from '@/features/events/format'
 import { useApproveTaskMutation, useRemoveAssigneeMutation, useUpdateTaskMutation } from '../api'
 import { formatMultiplier, formatPoints, projectedPoints, type TaskDetail } from '../schemas'
 import { AddAssigneeDialog } from './AddAssigneeDialog'
+import { ArchiveDialog } from './ArchiveDialog'
 import { ReopenDialog } from './ReopenDialog'
 import { RoleAvatar } from './RoleAvatar'
 
 /** Right column of the task dialog (canvas frame 08): base points, the points split and approval. */
-export function TaskAside({ task }: { task: TaskDetail }) {
+export function TaskAside({ task, onArchived }: { task: TaskDetail; onArchived?: () => void }) {
+  const approverNoteId = useId()
   const { toast } = useToast()
   const update = useUpdateTaskMutation(task.id)
   const approve = useApproveTaskMutation(task.id)
@@ -24,6 +26,7 @@ export function TaskAside({ task }: { task: TaskDetail }) {
   const base = draft ?? task.basePoints
   const [addOpen, setAddOpen] = useState(false)
   const [reopenOpen, setReopenOpen] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
   // Saved a moment after the last click, so a run of − / + clicks is one request.
@@ -175,16 +178,43 @@ export function TaskAside({ task }: { task: TaskDetail }) {
             Reopen
           </Button>
         ) : null
-      ) : task.canApprove && task.status === 'Review' ? (
-        <Button variant="success" size="lg" onClick={onApprove} loading={approve.isPending}>
-          Approve &amp; mark done
-        </Button>
+      ) : task.status === 'Review' && (task.canApprove || task.needsOtherApprover) ? (
+        <div className="flex flex-col gap-2">
+          <Button
+            variant="success"
+            size="lg"
+            onClick={onApprove}
+            loading={approve.isPending}
+            disabled={task.needsOtherApprover}
+            aria-describedby={task.needsOtherApprover ? approverNoteId : undefined}
+          >
+            Approve &amp; mark done
+          </Button>
+          {/* Nobody signs off their own work: the button stays visible so the rule is explained, not hidden. */}
+          {task.needsOtherApprover ? (
+            <Alert id={approverNoteId} tone="yellow">
+              {NEEDS_OTHER_APPROVER_MESSAGE}
+            </Alert>
+          ) : null}
+        </div>
+      ) : task.needsOtherApprover ? (
+        <Alert id={approverNoteId} tone="yellow">
+          {NEEDS_OTHER_APPROVER_MESSAGE}
+        </Alert>
       ) : task.requireTaskApproval && !task.canApprove ? (
         <Alert tone="gray">Only the committee lead or an admin can finish a task.</Alert>
       ) : null}
 
+      {/* Archiving needs manage rights: canEdit says so on a live card, canApprove on a Done one. */}
+      {task.canEdit || (task.status === 'Done' && task.canApprove) ? (
+        <Button variant="ghost" onClick={() => setArchiveOpen(true)}>
+          Archive task
+        </Button>
+      ) : null}
+
       {addOpen ? <AddAssigneeDialog task={task} basePoints={base} onClose={() => setAddOpen(false)} /> : null}
       {reopenOpen ? <ReopenDialog task={task} onClose={() => setReopenOpen(false)} /> : null}
+      {archiveOpen ? <ArchiveDialog task={task} onClose={() => setArchiveOpen(false)} onArchived={onArchived} /> : null}
     </aside>
   )
 }

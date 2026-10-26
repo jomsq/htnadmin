@@ -125,6 +125,78 @@ describe('Task detail dialog', () => {
     expect(await screen.findByRole('button', { name: 'Reopen' })).toBeInTheDocument()
   })
 
+  it('disables Approve and explains why when the approver is the only lead', async () => {
+    signInAs(boardMe)
+    mockTask(taskDetail({ status: 'Review', canApprove: false, needsOtherApprover: true }))
+    let approved = 0
+    server.use(
+      http.post('/api/tasks/t-floorplan/approve', () => {
+        approved++
+        return HttpResponse.json(taskDetail({ status: 'Done' }))
+      }),
+    )
+    const { user } = renderDialog()
+
+    const panel = await openDialog()
+    const approve = within(panel).getByRole('button', { name: 'Approve & mark done' })
+    expect(approve).toBeDisabled()
+    // The reason is on the page next to the button, not only in a tooltip.
+    const noteId = approve.getAttribute('aria-describedby') ?? ''
+    expect(within(panel).getByText('Another committee lead or a board member has to approve this.')).toBeInTheDocument()
+    // The sentence is wired to the button, so screen readers get the reason with it.
+    expect(document.getElementById(noteId)).toHaveTextContent('Another committee lead or a board member has to approve this.')
+    // The generic "only the lead or an admin" line would be wrong here.
+    expect(within(panel).queryByText('Only the committee lead or an admin can finish a task.')).not.toBeInTheDocument()
+
+    await user.click(approve)
+    expect(approved).toBe(0)
+  })
+
+  it('refuses to archive a done task that still holds live awards', async () => {
+    signInAs(boardMe)
+    mockTask(taskDetail({ status: 'Done', canEdit: false, approvedAt: '2026-10-20T10:00:00+08:00', approvedByName: 'Mika Soriano' }))
+    server.use(http.post('/api/tasks/t-floorplan/archive', () => problem(409, 'Reopen first', 'reopen_first')))
+    const { user } = renderDialog()
+
+    await openDialog()
+    await user.click(screen.getByRole('button', { name: 'Archive task' }))
+    const confirm = await screen.findByRole('alertdialog', { name: /Archive HTN-142/ })
+
+    await user.type(within(confirm).getByLabelText('Reason'), 'Duplicate of HTN-180.')
+    await user.click(within(confirm).getByRole('button', { name: 'Archive task' }))
+
+    expect(await within(confirm).findByText('This task still has live points awards. Reopen it first.')).toBeInTheDocument()
+    // The dialog stays open so the reason is not lost.
+    expect(within(confirm).getByLabelText('Reason')).toHaveValue('Duplicate of HTN-180.')
+  })
+
+  it('shows a refused mention on the comment field instead of a bare toast', async () => {
+    signInAs(boardMe)
+    mockTask()
+    server.use(
+      http.post('/api/tasks/t-floorplan/comments', () =>
+        problem(400, 'One or more validation errors occurred.', undefined, {
+          errors: { mentionPersonIds: ['Choose people from the list.'] },
+        }),
+      ),
+    )
+    const { user } = renderDialog()
+
+    await openDialog()
+    const box = within(dialog()).getByLabelText('Write a comment')
+    await user.type(box, 'Please check exit B @Mika')
+    const option = await screen.findByRole('option', { name: 'Mika Soriano' })
+    await user.click(within(option).getByRole('button', { name: 'Mika Soriano' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Comment' }))
+
+    const error = await within(dialog()).findByText(/Choose people from the list\./)
+    expect(error).toHaveAttribute('role', 'alert')
+    expect(box).toHaveAttribute('aria-invalid', 'true')
+    expect(box.getAttribute('aria-describedby')).toContain(error.id)
+    // The comment is kept so the mention can be fixed.
+    expect(box).toHaveValue('Please check exit B @Mika Soriano ')
+  })
+
   it('requires a reason to reopen a done task', async () => {
     signInAs(boardMe)
     mockTask(taskDetail({ status: 'Done', approvedAt: '2026-10-20T10:00:00+08:00', approvedByName: 'Mika Soriano' }))

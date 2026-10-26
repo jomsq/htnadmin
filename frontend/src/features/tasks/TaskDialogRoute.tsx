@@ -140,7 +140,7 @@ function TaskDialog({ task, onClose }: { task: TaskDetail; onClose: () => void }
           <TaskActivitySection task={task} />
         </div>
 
-        <TaskAside task={task} />
+        <TaskAside task={task} onArchived={onClose} />
       </div>
     </Dialog>
   )

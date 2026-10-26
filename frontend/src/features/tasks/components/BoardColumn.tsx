@@ -54,6 +54,13 @@ export function BoardColumnPanel({ column, eventId, canCreateTask, onAddTask, on
 
       {column.cards.length === 0 ? <p className="px-1 text-xs text-gray-600 dark:text-gray-400">No tasks here yet.</p> : null}
 
+      {/* Done is capped at the newest 50 cards, so the column says how many it really holds. */}
+      {column.hasMore ? (
+        <p className="px-1 text-xs text-gray-600 dark:text-gray-400">
+          Showing the newest {column.cards.length} of {column.count} tasks.
+        </p>
+      ) : null}
+
       {canCreateTask ? (
         <button
           type="button"

@@ -60,7 +60,10 @@ export type TaskCard = z.infer<typeof taskCardSchema>
 
 export const boardColumnSchema = z.object({
   status: taskStatusSchema,
+  /** The real number of cards in the column, even when `cards` only holds part of them. */
   count: z.number().default(0),
+  /** True when the server capped the column: Done returns only the newest 50 cards. */
+  hasMore: z.boolean().default(false),
   cards: z.array(taskCardSchema).default([]),
 })
 export type BoardColumn = z.infer<typeof boardColumnSchema>
@@ -171,6 +174,11 @@ export const taskDetailSchema = z.object({
   canWork: z.boolean().default(false),
   canApprove: z.boolean().default(false),
   canComment: z.boolean().default(false),
+  /**
+   * The caller manages this live, not-Done task but is its only Lead, so `canApprove` is false only because
+   * nobody signs off their own work. Another committee lead or a board member has to approve it.
+   */
+  needsOtherApprover: z.boolean().default(false),
   assignees: z.array(taskAssigneeSchema).default([]),
   checklist: z.array(checklistItemSchema).default([]),
   attachments: z.array(attachmentSchema).default([]),

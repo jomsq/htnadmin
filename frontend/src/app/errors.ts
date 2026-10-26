@@ -3,6 +3,8 @@ import { isApiError } from './api'
 export const RATE_LIMITED_MESSAGE = 'Too many attempts. Please wait a minute and try again.'
 export const INVITE_INVALID_MESSAGE = 'This invite link is invalid or has expired. Ask an admin to resend it.'
 export const RESET_INVALID_MESSAGE = 'This reset link is invalid or has expired.'
+/** Nobody signs off their own work: the only Lead on a task can't approve it. */
+export const NEEDS_OTHER_APPROVER_MESSAGE = 'Another committee lead or a board member has to approve this.'
 
 /** Human messages for the `code` extension the API puts on ProblemDetails. */
 const codeMessages: Record<string, string> = {
@@ -53,6 +55,8 @@ const codeMessages: Record<string, string> = {
   already_in_committee: 'This person is already in another committee for this event.',
   is_lead: 'This person leads the committee. Change the lead first.',
   needs_approval: 'Only the committee lead or an admin can finish a task. Move it to Review and ask them to approve it.',
+  needs_other_approver: NEEDS_OTHER_APPROVER_MESSAGE,
+  reopen_first: 'This task still has live points awards. Reopen it first.',
   no_lead: 'Add a lead before approving. A task needs someone in the Lead role so points can be awarded.',
   task_done: 'This task is done. Reopen it before changing points, assignees or details.',
   volunteer_role: 'Volunteers help as Assistant only, and never earn points.',

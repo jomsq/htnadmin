@@ -14,12 +14,15 @@ const tones: Record<AlertTone, string> = {
 
 /** Inline message block (tint background, no side stripe). Errors use role="alert". */
 export function Alert({
+  id,
   tone = 'gray',
   children,
   action,
   className,
   live,
 }: {
+  /** So a control can point at the message with aria-describedby. */
+  id?: string
   tone?: AlertTone
   children: ReactNode
   action?: ReactNode
@@ -28,7 +31,7 @@ export function Alert({
   live?: 'alert' | 'status'
 }) {
   return (
-    <div role={live} className={cn('flex flex-wrap items-center gap-3 rounded-md px-3 py-2.5 text-[0.8125rem] leading-normal', tones[tone], className)}>
+    <div id={id} role={live} className={cn('flex flex-wrap items-center gap-3 rounded-md px-3 py-2.5 text-[0.8125rem] leading-normal', tones[tone], className)}>
       <div className="min-w-0 flex-1">{children}</div>
       {action}
     </div>

@@ -178,6 +178,37 @@ describe('Task board', () => {
     expect(within(column('Done')).queryByRole('link', { name: /Finalize venue floor plan/ })).not.toBeInTheDocument()
   })
 
+  it('rolls the card back and explains needs_other_approver when the sole lead moves it to Done', async () => {
+    signInAs(boardMe)
+    mockBoard()
+    server.use(http.post('/api/tasks/t-floorplan/move', () => problem(409, 'Needs another approver', 'needs_other_approver')))
+    const { user } = renderBoard()
+
+    await screen.findByRole('heading', { name: 'Task board' }, { timeout: 5000 })
+    await user.click(within(column('In progress')).getByRole('button', { name: 'Move Finalize venue floor plan' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Done' }))
+
+    expect((await screen.findAllByText(/Another committee lead or a board member has to approve this/)).length).toBeGreaterThan(0)
+    // Rolled back: the card never reaches Done.
+    await waitFor(() => expect(within(column('In progress')).getByRole('link', { name: /Finalize venue floor plan/ })).toBeInTheDocument())
+    expect(within(column('Done')).queryByRole('link', { name: /Finalize venue floor plan/ })).not.toBeInTheDocument()
+  })
+
+  it('names the real total on a capped Done column and nowhere else', async () => {
+    signInAs(boardMe)
+    const base = board() as { columns: { status: string; count: number; hasMore: boolean; cards: Json[] }[] }
+    mockBoard({
+      ...base,
+      columns: base.columns.map((c) => (c.status === 'Done' ? { ...c, count: 134, hasMore: true } : c)),
+    })
+    renderBoard()
+
+    await screen.findByRole('heading', { name: 'Task board' }, { timeout: 5000 })
+    expect(within(column('Done')).getByText(/Showing the newest 1 of 134 tasks\./)).toBeInTheDocument()
+    expect(within(column('In progress')).queryByText(/Showing the newest/)).not.toBeInTheDocument()
+    expect(within(column('Review')).queryByText(/Showing the newest/)).not.toBeInTheDocument()
+  })
+
   it('explains no_lead when a task without a lead cannot be approved', async () => {
     signInAs(boardMe)
     mockBoard()

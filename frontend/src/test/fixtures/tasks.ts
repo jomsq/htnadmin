@@ -39,6 +39,7 @@ export const board = (over: Json = {}) => ({
     {
       status: 'Backlog',
       count: 1,
+      hasMore: false,
       cards: [
         card({
           id: 't-teaser',
@@ -60,6 +61,7 @@ export const board = (over: Json = {}) => ({
     {
       status: 'ToDo',
       count: 1,
+      hasMore: false,
       cards: [
         card({
           id: 't-lanyards',
@@ -74,10 +76,11 @@ export const board = (over: Json = {}) => ({
         }),
       ],
     },
-    { status: 'InProgress', count: 2, cards: [card(), card({ id: 't-social', reference: 'HTN-151', title: 'Social posts: week 3', committeeId: 'c-marketing', committeeName: 'Marketing', status: 'InProgress', dueSoon: false, basePoints: 15, canMove: false, isMine: false })] },
+    { status: 'InProgress', count: 2, hasMore: false, cards: [card(), card({ id: 't-social', reference: 'HTN-151', title: 'Social posts: week 3', committeeId: 'c-marketing', committeeName: 'Marketing', status: 'InProgress', dueSoon: false, basePoints: 15, canMove: false, isMine: false })] },
     {
       status: 'Review',
       count: 1,
+      hasMore: false,
       cards: [
         card({
           id: 't-desk',
@@ -96,6 +99,7 @@ export const board = (over: Json = {}) => ({
     {
       status: 'Done',
       count: 1,
+      hasMore: false,
       cards: [
         card({
           id: 't-venue',
@@ -140,6 +144,7 @@ export const taskDetail = (over: Json = {}) => ({
   canWork: true,
   canApprove: true,
   canComment: true,
+  needsOtherApprover: false,
   assignees: [
     { id: 'a-1', personId: 'p-alex', volunteerId: null, name: 'Alex Reyes', initials: 'AR', role: 'Lead', multiplier: 1, points: 40, isVolunteer: false },
     { id: 'a-2', personId: 'p-mika', volunteerId: null, name: 'Mika Soriano', initials: 'MS', role: 'Collab', multiplier: 0.7, points: 28, isVolunteer: false },
