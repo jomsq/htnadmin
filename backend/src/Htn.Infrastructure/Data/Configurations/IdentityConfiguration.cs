@@ -9,7 +9,16 @@ internal sealed class AppUserConfiguration : IEntityTypeConfiguration<AppUser>
 {
     public void Configure(EntityTypeBuilder<AppUser> b)
     {
-        b.ToTable("users");
+        b.ToTable("users", t =>
+        {
+            t.HasCheckConstraint("ck_users_pref_mode", CheckConstraints.In("pref_mode", Enum.GetNames<ThemeMode>()));
+            t.HasCheckConstraint("ck_users_pref_text_size", CheckConstraints.In("pref_text_size", Enum.GetNames<TextSize>()));
+            t.HasCheckConstraint("ck_users_pref_density", CheckConstraints.In("pref_density", Enum.GetNames<Density>()));
+        });
+        // Exactly one CFO and at most one finance assistant among active users.
+        b.HasIndex(u => u.IsCfo).IsUnique().HasDatabaseName("ux_users_single_cfo").HasFilter("is_cfo AND is_active");
+        b.HasIndex(u => u.IsFinanceAssistant).IsUnique().HasDatabaseName("ux_users_single_finance_assistant")
+            .HasFilter("is_finance_assistant AND is_active");
         b.HasIndex(u => u.PersonId).IsUnique().HasFilter("person_id IS NOT NULL");
         // Identity only enforces unique emails in code; make the database enforce it too.
         b.HasIndex(u => u.NormalizedEmail).HasDatabaseName("EmailIndex").IsUnique();
@@ -66,14 +75,23 @@ internal sealed class UserTokenConfiguration : IEntityTypeConfiguration<Identity
 
 internal sealed class RoleClaimConfiguration : IEntityTypeConfiguration<IdentityRoleClaim<Guid>>
 {
-    public void Configure(EntityTypeBuilder<IdentityRoleClaim<Guid>> b) => b.ToTable("role_claims");
+    public void Configure(EntityTypeBuilder<IdentityRoleClaim<Guid>> b)
+    {
+        b.ToTable("role_claims");
+        b.HasOne<IdentityRole<Guid>>().WithMany().HasForeignKey(rc => rc.RoleId).IsRequired()
+            .HasConstraintName("fk_role_claims_roles_role_id");
+    }
 }
 
 internal sealed class AccountTokenConfiguration : IEntityTypeConfiguration<AccountToken>
 {
     public void Configure(EntityTypeBuilder<AccountToken> b)
     {
-        b.ToTable("account_tokens");
+        b.ToTable("account_tokens", t =>
+        {
+            t.HasCheckConstraint("ck_account_tokens_purpose", CheckConstraints.In("purpose", Enum.GetNames<AccountTokenPurpose>()));
+            t.HasCheckConstraint("ck_account_tokens_token_hash", "token_hash ~ '^[0-9a-f]{64}$'");
+        });
         b.HasKey(t => t.Id);
         b.Property(t => t.Id).ValueGeneratedNever();
         b.Property(t => t.Purpose).HasConversion<string>().HasMaxLength(32);

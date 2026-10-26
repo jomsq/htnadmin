@@ -28,7 +28,11 @@ internal sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outb
 {
     public void Configure(EntityTypeBuilder<OutboxMessage> b)
     {
-        b.ToTable("outbox_messages");
+        b.ToTable("outbox_messages", t =>
+        {
+            t.HasCheckConstraint("ck_outbox_messages_status", CheckConstraints.In("status", Enum.GetNames<OutboxStatus>()));
+            t.HasCheckConstraint("ck_outbox_messages_attempts", "attempts >= 0");
+        });
         b.HasKey(o => o.Id);
         b.Property(o => o.Id).ValueGeneratedNever();
         b.Property(o => o.Type).HasMaxLength(100).IsRequired();
@@ -37,6 +41,14 @@ internal sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outb
         b.Property(o => o.Status).HasConversion<string>().HasMaxLength(16);
         b.Property(o => o.LastError).HasMaxLength(OutboxMessage.LastErrorMaxLength);
         b.Property(o => o.ExternalId).HasMaxLength(200);
-        b.HasIndex(o => new { o.Status, o.NextAttemptAt });
+        // Worker poll: WHERE status = 'Pending' AND next_attempt_at <= now ORDER BY created_at ... FOR UPDATE SKIP LOCKED.
+        // Partial, so it stays small however many Sent rows pile up.
+        b.HasIndex(o => new { o.CreatedAt, o.NextAttemptAt })
+            .HasDatabaseName("ix_outbox_messages_pending")
+            .HasFilter("status = 'Pending'");
+        // Admin review of messages that gave up.
+        b.HasIndex(o => o.CreatedAt)
+            .HasDatabaseName("ix_outbox_messages_failed")
+            .HasFilter("status = 'Failed'");
     }
 }

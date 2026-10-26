@@ -66,6 +66,8 @@ namespace Htn.Infrastructure.Data.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_outbox_messages", x => x.id);
+                    table.CheckConstraint("ck_outbox_messages_attempts", "attempts >= 0");
+                    table.CheckConstraint("ck_outbox_messages_status", "status IN ('Pending', 'Sent', 'Failed')");
                 });
 
             migrationBuilder.CreateTable(
@@ -86,6 +88,9 @@ namespace Htn.Infrastructure.Data.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_people", x => x.id);
+                    table.CheckConstraint("ck_people_deactivated_at", "(is_active AND deactivated_at IS NULL) OR (NOT is_active AND deactivated_at IS NOT NULL)");
+                    table.CheckConstraint("ck_people_email_normalized", "email = lower(btrim(email))");
+                    table.CheckConstraint("ck_people_level", "level IN ('Board', 'Goon', 'Apprentice', 'Member')");
                 });
 
             migrationBuilder.CreateTable(
@@ -118,6 +123,7 @@ namespace Htn.Infrastructure.Data.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_person_history", x => x.id);
+                    table.CheckConstraint("ck_person_history_kind", "kind IN ('created', 'level_changed', 'position_changed', 'deactivated')");
                     table.ForeignKey(
                         name: "fk_person_history_people_person_id",
                         column: x => x.person_id,
@@ -158,6 +164,9 @@ namespace Htn.Infrastructure.Data.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_users", x => x.id);
+                    table.CheckConstraint("ck_users_pref_density", "pref_density IN ('Comfortable', 'Compact')");
+                    table.CheckConstraint("ck_users_pref_mode", "pref_mode IN ('Light', 'System', 'Dark')");
+                    table.CheckConstraint("ck_users_pref_text_size", "pref_text_size IN ('Default', 'Large')");
                     table.ForeignKey(
                         name: "fk_users_people_person_id",
                         column: x => x.person_id,
@@ -180,7 +189,7 @@ namespace Htn.Infrastructure.Data.Migrations
                 {
                     table.PrimaryKey("pk_role_claims", x => x.id);
                     table.ForeignKey(
-                        name: "fk_role_claims_asp_net_roles_role_id",
+                        name: "fk_role_claims_roles_role_id",
                         column: x => x.role_id,
                         principalTable: "roles",
                         principalColumn: "id",
@@ -204,6 +213,8 @@ namespace Htn.Infrastructure.Data.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_account_tokens", x => x.id);
+                    table.CheckConstraint("ck_account_tokens_purpose", "purpose IN ('Invite', 'PasswordReset')");
+                    table.CheckConstraint("ck_account_tokens_token_hash", "token_hash ~ '^[0-9a-f]{64}$'");
                     table.ForeignKey(
                         name: "fk_account_tokens_users_issued_by_id",
                         column: x => x.issued_by_id,
@@ -345,9 +356,16 @@ namespace Htn.Infrastructure.Data.Migrations
                 columns: new[] { "entity_type", "entity_id" });
 
             migrationBuilder.CreateIndex(
-                name: "ix_outbox_messages_status_next_attempt_at",
+                name: "ix_outbox_messages_failed",
                 table: "outbox_messages",
-                columns: new[] { "status", "next_attempt_at" });
+                column: "created_at",
+                filter: "status = 'Failed'");
+
+            migrationBuilder.CreateIndex(
+                name: "ix_outbox_messages_pending",
+                table: "outbox_messages",
+                columns: new[] { "created_at", "next_attempt_at" },
+                filter: "status = 'Pending'");
 
             migrationBuilder.CreateIndex(
                 name: "ix_people_email",
@@ -415,17 +433,48 @@ namespace Htn.Infrastructure.Data.Migrations
                 unique: true,
                 filter: "person_id IS NOT NULL");
 
-            // Audit and person history are append-only: reject UPDATE/DELETE at the database too.
+            migrationBuilder.CreateIndex(
+                name: "ux_users_single_cfo",
+                table: "users",
+                column: "is_cfo",
+                unique: true,
+                filter: "is_cfo AND is_active");
+
+            migrationBuilder.CreateIndex(
+                name: "ux_users_single_finance_assistant",
+                table: "users",
+                column: "is_finance_assistant",
+                unique: true,
+                filter: "is_finance_assistant AND is_active");
+
+            // Audit and person history are append-only: reject UPDATE/DELETE/TRUNCATE at the database too,
+            // for every role (including the table owner) unless the trigger is explicitly disabled.
             migrationBuilder.Sql("""
                 CREATE FUNCTION htn_reject_change() RETURNS trigger LANGUAGE plpgsql AS $$
                 BEGIN
-                    RAISE EXCEPTION '% is append-only', TG_TABLE_NAME;
+                    RAISE EXCEPTION '% is append-only (% rejected)', TG_TABLE_NAME, TG_OP
+                        USING ERRCODE = 'insufficient_privilege';
                 END;
                 $$;
                 CREATE TRIGGER audit_entries_append_only BEFORE UPDATE OR DELETE ON audit_entries
                     FOR EACH ROW EXECUTE FUNCTION htn_reject_change();
+                CREATE TRIGGER audit_entries_no_truncate BEFORE TRUNCATE ON audit_entries
+                    FOR EACH STATEMENT EXECUTE FUNCTION htn_reject_change();
                 CREATE TRIGGER person_history_append_only BEFORE UPDATE OR DELETE ON person_history
                     FOR EACH ROW EXECUTE FUNCTION htn_reject_change();
+                CREATE TRIGGER person_history_no_truncate BEFORE TRUNCATE ON person_history
+                    FOR EACH STATEMENT EXECUTE FUNCTION htn_reject_change();
+
+                REVOKE UPDATE, DELETE, TRUNCATE ON audit_entries, person_history FROM PUBLIC;
+                -- Production runs the API as a non-owner role named htn_app (migrations run as the owner).
+                -- Where that role exists, it may only read and insert these tables.
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'htn_app') THEN
+                        REVOKE UPDATE, DELETE, TRUNCATE ON audit_entries, person_history FROM htn_app;
+                    END IF;
+                END
+                $$;
                 """);
         }
 
@@ -433,7 +482,9 @@ namespace Htn.Infrastructure.Data.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.Sql("""
+                DROP TRIGGER IF EXISTS person_history_no_truncate ON person_history;
                 DROP TRIGGER IF EXISTS person_history_append_only ON person_history;
+                DROP TRIGGER IF EXISTS audit_entries_no_truncate ON audit_entries;
                 DROP TRIGGER IF EXISTS audit_entries_append_only ON audit_entries;
                 DROP FUNCTION IF EXISTS htn_reject_change();
                 """);

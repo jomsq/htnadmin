@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Htn.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(HtnDbContext))]
-    [Migration("20261026061658_Initial")]
+    [Migration("20261026062829_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -151,7 +151,14 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.HasIndex("LastName", "FirstName")
                         .HasDatabaseName("ix_people_last_name_first_name");
 
-                    b.ToTable("people", (string)null);
+                    b.ToTable("people", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_people_deactivated_at", "(is_active AND deactivated_at IS NULL) OR (NOT is_active AND deactivated_at IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_people_email_normalized", "email = lower(btrim(email))");
+
+                            t.HasCheckConstraint("ck_people_level", "level IN ('Board', 'Goon', 'Apprentice', 'Member')");
+                        });
                 });
 
             modelBuilder.Entity("Htn.Domain.Organization.PersonHistory", b =>
@@ -199,7 +206,10 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.HasIndex("PersonId", "At")
                         .HasDatabaseName("ix_person_history_person_id_at");
 
-                    b.ToTable("person_history", (string)null);
+                    b.ToTable("person_history", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_person_history_kind", "kind IN ('created', 'level_changed', 'position_changed', 'deactivated')");
+                        });
                 });
 
             modelBuilder.Entity("Htn.Domain.Outbox.OutboxMessage", b =>
@@ -259,10 +269,20 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.HasKey("Id")
                         .HasName("pk_outbox_messages");
 
-                    b.HasIndex("Status", "NextAttemptAt")
-                        .HasDatabaseName("ix_outbox_messages_status_next_attempt_at");
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("ix_outbox_messages_failed")
+                        .HasFilter("status = 'Failed'");
 
-                    b.ToTable("outbox_messages", (string)null);
+                    b.HasIndex("CreatedAt", "NextAttemptAt")
+                        .HasDatabaseName("ix_outbox_messages_pending")
+                        .HasFilter("status = 'Pending'");
+
+                    b.ToTable("outbox_messages", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_outbox_messages_attempts", "attempts >= 0");
+
+                            t.HasCheckConstraint("ck_outbox_messages_status", "status IN ('Pending', 'Sent', 'Failed')");
+                        });
                 });
 
             modelBuilder.Entity("Htn.Infrastructure.Identity.AccountToken", b =>
@@ -321,7 +341,13 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.HasIndex("UserId", "Purpose")
                         .HasDatabaseName("ix_account_tokens_user_id_purpose");
 
-                    b.ToTable("account_tokens", (string)null);
+                    b.ToTable("account_tokens", null, t =>
+                        {
+
+                            t.HasCheckConstraint("ck_account_tokens_purpose", "purpose IN ('Invite', 'PasswordReset')");
+
+                            t.HasCheckConstraint("ck_account_tokens_token_hash", "token_hash ~ '^[0-9a-f]{64}$'");
+                        });
                 });
 
             modelBuilder.Entity("Htn.Infrastructure.Identity.AppUser", b =>
@@ -444,6 +470,16 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.HasKey("Id")
                         .HasName("pk_users");
 
+                    b.HasIndex("IsCfo")
+                        .IsUnique()
+                        .HasDatabaseName("ux_users_single_cfo")
+                        .HasFilter("is_cfo AND is_active");
+
+                    b.HasIndex("IsFinanceAssistant")
+                        .IsUnique()
+                        .HasDatabaseName("ux_users_single_finance_assistant")
+                        .HasFilter("is_finance_assistant AND is_active");
+
                     b.HasIndex("NormalizedEmail")
                         .IsUnique()
                         .HasDatabaseName("EmailIndex");
@@ -457,7 +493,14 @@ namespace Htn.Infrastructure.Data.Migrations
                         .HasDatabaseName("ix_users_person_id")
                         .HasFilter("person_id IS NOT NULL");
 
-                    b.ToTable("users", (string)null);
+                    b.ToTable("users", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_users_pref_density", "pref_density IN ('Comfortable', 'Compact')");
+
+                            t.HasCheckConstraint("ck_users_pref_mode", "pref_mode IN ('Light', 'System', 'Dark')");
+
+                            t.HasCheckConstraint("ck_users_pref_text_size", "pref_text_size IN ('Default', 'Large')");
+                        });
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.DataProtection.EntityFrameworkCore.DataProtectionKey", b =>
@@ -712,7 +755,7 @@ namespace Htn.Infrastructure.Data.Migrations
                         .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
-                        .HasConstraintName("fk_role_claims_asp_net_roles_role_id");
+                        .HasConstraintName("fk_role_claims_roles_role_id");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserClaim<System.Guid>", b =>

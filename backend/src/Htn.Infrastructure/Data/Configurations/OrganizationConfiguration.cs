@@ -8,7 +8,14 @@ internal sealed class PersonConfiguration : IEntityTypeConfiguration<Person>
 {
     public void Configure(EntityTypeBuilder<Person> b)
     {
-        b.ToTable("people");
+        b.ToTable("people", t =>
+        {
+            t.HasCheckConstraint("ck_people_level", CheckConstraints.In("level", Enum.GetNames<PersonLevel>()));
+            // The unique index on email is only case-insensitive if every row is stored normalized.
+            t.HasCheckConstraint("ck_people_email_normalized", "email = lower(btrim(email))");
+            t.HasCheckConstraint("ck_people_deactivated_at",
+                "(is_active AND deactivated_at IS NULL) OR (NOT is_active AND deactivated_at IS NOT NULL)");
+        });
         b.HasKey(p => p.Id);
         b.Property(p => p.Id).ValueGeneratedNever();
         b.Property(p => p.FirstName).HasMaxLength(Person.NameMaxLength).IsRequired();
@@ -33,7 +40,8 @@ internal sealed class PersonHistoryConfiguration : IEntityTypeConfiguration<Pers
 {
     public void Configure(EntityTypeBuilder<PersonHistory> b)
     {
-        b.ToTable("person_history");
+        b.ToTable("person_history", t => t.HasCheckConstraint("ck_person_history_kind", CheckConstraints.In("kind",
+            PersonHistoryKinds.Created, PersonHistoryKinds.LevelChanged, PersonHistoryKinds.PositionChanged, PersonHistoryKinds.Deactivated)));
         b.HasKey(h => h.Id);
         b.Property(h => h.Id).ValueGeneratedNever();
         b.Property(h => h.Kind).HasMaxLength(32).IsRequired();
