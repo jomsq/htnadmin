@@ -20,7 +20,7 @@ Each capability below is a **named policy** in `Htn.Api/Auth/Policies.cs`. Resou
 |---|---|
 | `CommitteeScope(committeeId)` | manage: lead of that committee · work: on that committee · view: on that committee or a sibling committee of its event |
 | `EventScope(eventId)` | manage: leads a committee of that event · work/view: on a committee of that event |
-| `TaskScope(taskId)` | resolved by `ITaskScopeResolver` (Phase 4B); until then every task-scoped check fails closed |
+| `TaskScope(taskId)` | resolved by `ITaskScopeResolver` (Phase 4B): it loads the task's committee and its person assignees, so manage: lead of the task's committee · work: lead or an assignee of the task · view: on a committee of the task's event. An unknown task id resolves to null, so the check still fails closed |
 | none, or the `HttpContext` that `.RequireAuthorization(...)` passes | **"may be allowed"**: leads something (manage) / is on something (work, view). This is the coarse route gate, and what `/api/auth/me` reports |
 
 Routes carry the named policy as the coarse gate; where the committee is only known after the row is loaded, the
@@ -31,6 +31,11 @@ explicit per-resource flags (`canManage`, `canCreateCommittee`, `canManageVolunt
 
 Creating, renaming, re-leading and deactivating a **committee** is board-only (a lead manages the people on their own
 committee, not the committee itself), so those routes add a second board-only gate next to the scoped policy.
+`Leaderboard.View` (Phase 4C) is deliberately **not** scoped: it is a plain role check for any signed-in
+Board/Goon/Apprentice, because `/leaderboard` and `/my-tasks` are organization-wide sidebar screens rather than the
+board of one event. It also gates `GET /api/tasks/mine`, which only ever returns the caller's own cards. The
+leaderboard itself lists goons and apprentices only — board members earn points but are never ranked.
+
 A committee **lead must be an active goon**; committee **members need an active login** (Board, Goon or Apprentice).
 Volunteers have no login: they are per-event records managed by the board or the lead of the committee they are on.
 
@@ -44,6 +49,7 @@ Volunteers have no login: they are per-event records managed by the board or the
 | `Tasks.Manage` (create, assign, set points, approve to Done) | ✓ | own committee | — | — |
 | `Tasks.Work` (move own cards, comment, checklist) | ✓ | ✓ | own tasks | own tasks |
 | `Tasks.ViewBoard` | ✓ | ✓ | events they're on | events they're on |
+| `Leaderboard.View` (leaderboard and "My tasks": organization-wide sidebar screens, not event-scoped) | ✓ | ✓ | ✓ | ✓ |
 | `Registrations.Manage` (manual registration, mark paid, cancel, resend) | ✓ | — | — | — |
 | `CheckIn.Scan` | ✓ | ✓ | ✓ | ✓ |
 | `Sponsors.Manage`, `Leads.Manage`, `Invitations.Manage`, `Directory.Manage` | ✓ | — | — | — |

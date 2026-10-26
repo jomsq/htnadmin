@@ -1793,22 +1793,34 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.HasIndex("TaskId")
                         .HasDatabaseName("ix_points_awards_task_id");
 
-                    b.HasIndex("CommitteeId", "PersonId")
-                        .HasDatabaseName("ix_points_awards_committee_id_person_id")
+                    b.HasIndex("AwardedAt", "PersonId")
+                        .HasDatabaseName("ix_points_awards_awarded_at_person_id")
                         .HasFilter("reversed_at IS NULL");
 
-                    b.HasIndex("EventId", "PersonId")
-                        .HasDatabaseName("ix_points_awards_event_id_person_id")
-                        .HasFilter("reversed_at IS NULL");
+                    NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("AwardedAt", "PersonId"), new[] { "Points", "Role", "EventId", "CommitteeId" });
 
                     b.HasIndex("PersonId", "AwardedAt")
                         .HasDatabaseName("ix_points_awards_person_id_awarded_at")
                         .HasFilter("reversed_at IS NULL");
 
+                    NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("PersonId", "AwardedAt"), new[] { "Points", "EventId", "CommitteeId", "Role" });
+
                     b.HasIndex("TaskId", "PersonId")
                         .IsUnique()
                         .HasDatabaseName("ux_points_awards_live_task_person")
                         .HasFilter("reversed_at IS NULL");
+
+                    b.HasIndex("CommitteeId", "AwardedAt", "PersonId")
+                        .HasDatabaseName("ix_points_awards_committee_id_awarded_at_person_id")
+                        .HasFilter("reversed_at IS NULL");
+
+                    NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("CommitteeId", "AwardedAt", "PersonId"), new[] { "Points", "Role" });
+
+                    b.HasIndex("EventId", "AwardedAt", "PersonId")
+                        .HasDatabaseName("ix_points_awards_event_id_awarded_at_person_id")
+                        .HasFilter("reversed_at IS NULL");
+
+                    NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("EventId", "AwardedAt", "PersonId"), new[] { "Points", "Role", "CommitteeId" });
 
                     b.ToTable("points_awards", null, t =>
                         {

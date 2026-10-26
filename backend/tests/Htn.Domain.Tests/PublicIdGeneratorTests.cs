@@ -39,12 +39,32 @@ public sealed partial class PublicIdGeneratorTests
         Assert.Equal(PublicIdGenerator.Alphabet.Length, seen.Count);
     }
 
+    /// <summary>
+    /// Participant IDs are random, not sequential, so collisions are a birthday problem rather than an impossibility:
+    /// with 30^8 ≈ 6.56e11 possible bodies, 100k draws expect n²/2N ≈ 0.0076 collisions, and "zero collisions" fails
+    /// for real about once in 130 runs. The property worth asserting is therefore a *bound*, not zero: the chance of
+    /// more than <see cref="MaxCollisions"/> is far below one in a billion, and any real loss of entropy (a shortened
+    /// body, a biased alphabet, a reused seed) blows straight past it. The insert path still has a unique index.
+    /// </summary>
+    private const int MaxCollisions = 8;
+
     [Fact]
-    public void No_collisions_in_100k()
+    public void Collisions_in_100k_stay_within_the_birthday_bound()
     {
-        var set = new HashSet<string>(100_000);
-        for (var i = 0; i < 100_000; i++)
-            Assert.True(set.Add(_ids.NewParticipantId()), "collision");
+        const int draws = 100_000;
+        var set = new HashSet<string>(draws);
+        for (var i = 0; i < draws; i++) set.Add(_ids.NewParticipantId());
+
+        var collisions = draws - set.Count;
+        Assert.InRange(collisions, 0, MaxCollisions);
+    }
+
+    /// <summary>The deterministic half of the same property: distinct draws from the same generator instance.</summary>
+    [Fact]
+    public void Successive_ids_differ()
+    {
+        for (var i = 0; i < 1_000; i++)
+            Assert.NotEqual(_ids.NewParticipantId(), _ids.NewParticipantId());
     }
 
     [Fact]

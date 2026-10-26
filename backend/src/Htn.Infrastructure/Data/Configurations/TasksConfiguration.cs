@@ -200,10 +200,18 @@ internal sealed class PointsAwardConfiguration : IEntityTypeConfiguration<Points
 
         b.HasIndex(a => new { a.TaskId, a.PersonId }).IsUnique().HasDatabaseName(LiveAwardIndex).HasFilter("reversed_at IS NULL");
         b.HasIndex(a => a.TaskId);
-        // The leaderboard: live awards of a person, by event / committee / quarter.
-        b.HasIndex(a => new { a.PersonId, a.AwardedAt }).HasFilter("reversed_at IS NULL");
-        b.HasIndex(a => new { a.EventId, a.PersonId }).HasFilter("reversed_at IS NULL");
-        b.HasIndex(a => new { a.CommitteeId, a.PersonId }).HasFilter("reversed_at IS NULL");
+        // The leaderboard (frame 14) groups live awards by person and committee over one of three windows: one event,
+        // the current Manila quarter, or all time. These partial indexes cover each of those scans, INCLUDE-ing the
+        // aggregated columns so the grouping is an index-only scan and the award rows are never touched.
+        b.HasIndex(a => new { a.PersonId, a.AwardedAt }).HasFilter("reversed_at IS NULL")
+            .IncludeProperties(a => new { a.Points, a.EventId, a.CommitteeId, a.Role });
+        b.HasIndex(a => new { a.EventId, a.AwardedAt, a.PersonId }).HasFilter("reversed_at IS NULL")
+            .IncludeProperties(a => new { a.Points, a.Role, a.CommitteeId });
+        b.HasIndex(a => new { a.CommitteeId, a.AwardedAt, a.PersonId }).HasFilter("reversed_at IS NULL")
+            .IncludeProperties(a => new { a.Points, a.Role });
+        // The default scope is "this quarter" across every event, which filters on awarded_at alone.
+        b.HasIndex(a => new { a.AwardedAt, a.PersonId }).HasFilter("reversed_at IS NULL")
+            .IncludeProperties(a => new { a.Points, a.Role, a.EventId, a.CommitteeId });
 
         b.HasOne<TaskItem>().WithMany().HasForeignKey(a => a.TaskId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Event>().WithMany().HasForeignKey(a => a.EventId).OnDelete(DeleteBehavior.Restrict);

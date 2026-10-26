@@ -5,6 +5,7 @@ using Htn.Api.Features.Auth;
 using Htn.Api.Features.CheckIn;
 using Htn.Api.Features.Committees;
 using Htn.Api.Features.Events;
+using Htn.Api.Features.Leaderboard;
 using Htn.Api.Features.Organization;
 using Htn.Api.Features.Registrations;
 using Htn.Api.Features.Settings;
@@ -166,6 +167,7 @@ app.MapTasks();
 app.MapMyTasks();
 app.MapTaskDetail();
 app.MapTaskParts();
+app.MapLeaderboard();
 
 var migrate = app.Configuration.GetValue("Database:MigrateOnStartup", app.Environment.IsDevelopment());
 if (migrate)

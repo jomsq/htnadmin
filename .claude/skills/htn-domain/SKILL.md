@@ -39,7 +39,14 @@ This is the single source of truth for behaviour. If code and this file disagree
 - **Points:** base points × role multiplier, awarded when the task is **approved into Done** (by the lead or an admin).
   - Defaults are Lead 1.0, Collab 0.7, Assistant 0.3, configurable in Settings.
   - A task can have several people in each role.
-- **Leaderboard:** goons and apprentices only. It can be filtered by event, quarter or all time, and by committee.
+  - **An award is a snapshot.** The row keeps the base points, the role, the multiplier used, the event and the
+    **committee as of the moment of the award**. Changing the multipliers in Settings, editing the task's base points
+    or later moving the task to another committee never rewrites history: reporting reads `points_awards`, never the
+    task's current committee. Reopening a Done task reverses the awards with a reason instead of deleting them.
+- **Leaderboard:** goons and apprentices only (board members earn points but are never ranked). It can be filtered by
+  event, quarter (the calendar quarter in Asia/Manila) or all time, and by committee — the committee filter and the
+  committee shown on a row come from the award's snapshotted committee, not from where the task sits today.
+  Reversed awards count for nothing. Ties share a rank (dense ranking: 1, 1, 2).
 
 ## Registration, payment, tickets
 - **Form fields:**

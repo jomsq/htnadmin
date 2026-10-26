@@ -34,12 +34,13 @@ public static class TasksEndpoints
 
     /// <summary>
     /// The caller's own open cards across every event. Every signed-in staff role may ask (the answer only ever
-    /// contains tasks they are assigned to), so the gate is <c>Events.View</c>.
+    /// contains tasks they are assigned to), so the gate is the organization-wide <c>Leaderboard.View</c> rather than
+    /// the event-scoped task policies: "My tasks" is a sidebar screen, not a board of one event.
     /// </summary>
     public static RouteGroupBuilder MapMyTasks(this IEndpointRouteBuilder app)
     {
         var g = app.MapGroup("/api/tasks").WithTags("Tasks");
-        g.MapGet("/mine", Mine).RequireAuthorization(Policies.EventsView);
+        g.MapGet("/mine", Mine).RequireAuthorization(Policies.LeaderboardView);
         return g;
     }
 

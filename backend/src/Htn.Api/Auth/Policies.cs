@@ -14,6 +14,7 @@ public static class Policies
     public const string TasksManage = "Tasks.Manage";
     public const string TasksWork = "Tasks.Work";
     public const string TasksViewBoard = "Tasks.ViewBoard";
+    public const string LeaderboardView = "Leaderboard.View";
     public const string RegistrationsManage = "Registrations.Manage";
     public const string CheckInScan = "CheckIn.Scan";
     public const string SponsorsManage = "Sponsors.Manage";
@@ -38,7 +39,7 @@ public static class Policies
 
     public static readonly IReadOnlyList<string> All =
     [
-        PeopleManage, PeopleView, EventsManage, EventsView, CommitteesManageMembers, TasksManage, TasksWork, TasksViewBoard,
+        PeopleManage, PeopleView, EventsManage, EventsView, CommitteesManageMembers, TasksManage, TasksWork, TasksViewBoard, LeaderboardView,
         RegistrationsManage, CheckInScan, SponsorsManage, LeadsManage, InvitationsManage, DirectoryManage, DirectoryView,
         SpeakersManage, SuppliersManage, SuppliersView, SuppliersRate, MerchManage, MerchSell, PopUpsManage, PopUpsSell,
         FinanceView, FinancePost, FinanceApprove, FinanceRequest, SettingsManage, SettingsPersonal,
@@ -50,7 +51,7 @@ public static class Policies
 
     /// <summary>
     /// Phase 1 implements People.* and Settings.Personal; Phase 3 adds Events.View and CheckIn.Scan (any signed-in
-    /// Board/Goon/Apprentice); Phase 4A adds the four resource-scoped committee/task policies. Everything else is
+    /// Board/Goon/Apprentice); Phase 4A adds the four resource-scoped committee/task policies; Phase 4C adds Leaderboard.View. Everything else is
     /// registered as Board-only (Finance.Post/Approve as CFO-only) until its slice adds the scoped handlers.
     /// </summary>
     public static AuthorizationBuilder AddHtnPolicies(this AuthorizationBuilder auth)
@@ -63,6 +64,9 @@ public static class Policies
         auth.AddPolicy(EventsView, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board, Roles.Goon, Roles.Apprentice));
         // Every staff role works the check-in desk (committee leads are goons).
         auth.AddPolicy(CheckInScan, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board, Roles.Goon, Roles.Apprentice));
+        // The leaderboard and "My tasks" are organization-wide screens in the sidebar, so they are not event-scoped:
+        // any signed-in staff member may read them (the leaderboard lists only goons and apprentices either way).
+        auth.AddPolicy(LeaderboardView, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board, Roles.Goon, Roles.Apprentice));
 
         auth.AddPolicy(FinancePost, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board).RequireClaim(HtnClaimTypes.Cfo, "true"));
         auth.AddPolicy(FinanceApprove, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board).RequireClaim(HtnClaimTypes.Cfo, "true"));
@@ -83,7 +87,7 @@ public static class Policies
         string[] implemented =
         [
             PeopleView, PeopleManage, SettingsPersonal, EventsView, CheckInScan, FinancePost, FinanceApprove,
-            CommitteesManageMembers, TasksManage, TasksWork, TasksViewBoard,
+            CommitteesManageMembers, TasksManage, TasksWork, TasksViewBoard, LeaderboardView,
         ];
         foreach (var name in All.Except(implemented))
             auth.AddPolicy(name, p => p.RequireAuthenticatedUser().RequireRole(Roles.Board));
