@@ -132,7 +132,9 @@ internal static class TaskViews
 
     // ---------- Detail ----------
 
-    public sealed record DetailFlags(bool CanEdit, bool CanWork, bool CanApprove, bool CanComment, bool NeedsOtherApprover);
+    public sealed record DetailFlags(
+        bool CanEdit, bool CanWork, bool CanApprove, bool CanComment, bool NeedsOtherApprover,
+        bool CanReopen, bool CanArchive, bool CanRestore);
 
     public static async Task<TaskDetailDto> DetailAsync(
         HtnDbContext db, TaskItem task, DetailFlags flags, Guid? myUserId, bool isBoard, DateTimeOffset now, CancellationToken ct)
@@ -192,6 +194,7 @@ internal static class TaskViews
             new MultipliersDto(settings.LeadMultiplier, settings.CollabMultiplier, settings.AssistantMultiplier),
             new PresetsDto(settings.PresetSmall, settings.PresetMedium, settings.PresetLarge, settings.PresetXl),
             flags.CanEdit, flags.CanWork, flags.CanApprove, flags.CanComment, flags.NeedsOtherApprover,
+            flags.CanReopen, flags.CanArchive, flags.CanRestore,
             assignees.Select(a =>
             {
                 var name = a.PersonId is { } pid
@@ -231,6 +234,14 @@ internal static class TaskViews
     /// <c>needsOtherApprover</c> then says <b>why</b>, so the dialog can disable Approve with the real explanation
     /// instead of guessing ("another committee lead or a board member has to approve this").
     /// </para>
+    /// <para>
+    /// <c>canEdit</c>, <c>canWork</c> and <c>canApprove</c> are all about an <b>open</b> card, so they say nothing
+    /// about the three routes that exist precisely for a finished or shelved one. Those get their own flags, or the
+    /// UI has no way to know who may undo a wrong approval: <c>canReopen</c> (manage + Done + not archived),
+    /// <c>canArchive</c> (manage + not archived, and <b>false while the card holds live awards</b>, because
+    /// <c>POST /archive</c> then answers 409 <c>reopen_first</c> — better hidden than offered and refused) and
+    /// <c>canRestore</c> (manage + archived).
+    /// </para>
     /// </summary>
     public static async Task<DetailFlags> FlagsAsync(
         IAuthorizationService auth, HttpContext http, HtnDbContext db, TaskItem task, ICurrentUser me, CancellationToken ct)
@@ -241,11 +252,16 @@ internal static class TaskViews
         var live = !task.IsArchived;
         var open = live && task.Status != TaskBoardStatus.Done;
         var soleLead = open && manage && await TaskOps.NeedsOtherApproverAsync(db, task.Id, me.PersonId, ct);
+        // Only asked when it can change the answer: a card is normally open and holds no awards at all.
+        var hasLiveAwards = manage && live && await TaskOps.HasLiveAwardsAsync(db, task.Id, ct);
         return new DetailFlags(
             CanEdit: manage && open,
             CanWork: work && open,
             CanApprove: manage && open && !soleLead,
             CanComment: work && live,
-            NeedsOtherApprover: soleLead);
+            NeedsOtherApprover: soleLead,
+            CanReopen: manage && live && task.Status == TaskBoardStatus.Done,
+            CanArchive: manage && live && !hasLiveAwards,
+            CanRestore: manage && task.IsArchived);
     }
 }

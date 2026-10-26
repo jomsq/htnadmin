@@ -130,6 +130,63 @@ public sealed class TaskApprovalTests(HtnApiFactory factory) : IClassFixture<Htn
     }
 
     [Fact]
+    public async Task A_done_card_still_says_who_may_reopen_archive_or_restore_it()
+    {
+        var s = await SceneAsync(factory);
+        var id = await CreateTaskAsync(s.Board, s.EventId, s.Committee, basePoints: 40);
+        await AssignOkAsync(s.Board, id, s.Worker.PersonId, "Lead");
+
+        // While the card is open: archiving is on the table, reopening and restoring are not.
+        var open = await DetailAsync(s.LeadClient, id);
+        Assert.True(open.GetProperty("canArchive").GetBoolean());
+        Assert.False(open.GetProperty("canReopen").GetBoolean());
+        Assert.False(open.GetProperty("canRestore").GetBoolean());
+
+        Assert.Equal(HttpStatusCode.OK, (await ApproveAsync(s.LeadClient, id)).StatusCode);
+
+        // Done: canEdit/canWork/canApprove are all false, so these are the only flags that can offer the undo.
+        foreach (var manager in new[] { s.LeadClient, s.Board })
+        {
+            var detail = await DetailAsync(manager, id);
+            Assert.False(detail.GetProperty("canEdit").GetBoolean());
+            Assert.False(detail.GetProperty("canApprove").GetBoolean());
+            Assert.True(detail.GetProperty("canReopen").GetBoolean());
+            // The card holds live awards, so archiving would answer 409 reopen_first: not offered.
+            Assert.False(detail.GetProperty("canArchive").GetBoolean());
+            Assert.False(detail.GetProperty("canRestore").GetBoolean());
+        }
+
+        // The apprentice who did the work is not a manager: none of the three.
+        var hers = await DetailAsync(s.WorkerClient, id);
+        Assert.False(hers.GetProperty("canReopen").GetBoolean());
+        Assert.False(hers.GetProperty("canArchive").GetBoolean());
+        Assert.False(hers.GetProperty("canRestore").GetBoolean());
+        // And the lead of the sibling committee, who can only read the card, likewise.
+        var theirs = await DetailAsync(s.OtherLeadClient, id);
+        Assert.False(theirs.GetProperty("canReopen").GetBoolean());
+        Assert.False(theirs.GetProperty("canArchive").GetBoolean());
+
+        // The flag is honest: the committee lead really can reopen it, which clears the awards...
+        var reopened = await ApiClient.JsonAsync(await ReopenAsync(s.LeadClient, id, "Approved the wrong card."));
+        Assert.Equal("Review", reopened.Status());
+        Assert.False(reopened.GetProperty("canReopen").GetBoolean());
+        // ...and archiving is offered again now that nothing is awarded.
+        Assert.True(reopened.GetProperty("canArchive").GetBoolean());
+
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await s.Board.PostAsync($"/api/tasks/{id}/archive", new { reason = "Duplicate card." })).StatusCode);
+        var archived = await DetailAsync(s.LeadClient, id);
+        Assert.True(archived.GetProperty("canRestore").GetBoolean());
+        Assert.False(archived.GetProperty("canArchive").GetBoolean());
+        Assert.False(archived.GetProperty("canReopen").GetBoolean());
+        Assert.False((await DetailAsync(s.WorkerClient, id)).GetProperty("canRestore").GetBoolean());
+        // And restoring really works for the manager the flag points at.
+        var restored = await ApiClient.JsonAsync(await s.LeadClient.PostAsync($"/api/tasks/{id}/restore"));
+        Assert.False(restored.GetProperty("canRestore").GetBoolean());
+        Assert.True(restored.GetProperty("canEdit").GetBoolean());
+    }
+
+    [Fact]
     public async Task A_task_with_live_awards_cannot_be_archived_until_it_is_reopened()
     {
         var s = await SceneAsync(factory);

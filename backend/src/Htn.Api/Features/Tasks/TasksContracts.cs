@@ -53,6 +53,11 @@ public sealed record TaskDetailDto(
     // only because nobody signs off their own work. Another lead of the committee, or any board member, has to
     // approve it (409 needs_other_approver if they try anyway).
     bool NeedsOtherApprover,
+    // The three routes that act on a finished or shelved card, which canEdit/canApprove (both "open card" flags)
+    // can never describe: canReopen = Tasks.Manage + Done + not archived; canArchive = Tasks.Manage + not archived
+    // and no live awards (archiving one that has them answers 409 reopen_first); canRestore = Tasks.Manage +
+    // archived.
+    bool CanReopen, bool CanArchive, bool CanRestore,
     IReadOnlyList<TaskAssigneeDto> Assignees, IReadOnlyList<ChecklistItemDto> Checklist,
     IReadOnlyList<TaskAttachmentDto> Attachments, IReadOnlyList<TaskCommentDto> Comments,
     IReadOnlyList<TaskActivityDto> Activity, IReadOnlyList<TaskAwardDto> Awards);
