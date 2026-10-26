@@ -36,9 +36,17 @@ This is the single source of truth for behaviour. If code and this file disagree
 - An event has details, tickets, vouchers, registration settings, speaker travel settings, committees, a task board, agenda, registrations, emails, check-in, sponsors, leads, invitations and merch.
 - **Task board** columns: Backlog, To do, In progress, Review, Done. A task has a checklist, attachments, comments, an activity log, labels and a due date.
 - **Only admins and the committee lead** create, assign and score tasks in that committee.
+- **A person is on at most one committee per event** (they may lead or join a committee of another event). Moving
+  someone means removing them from the first committee; the history of both rows is kept.
 - **Points:** base points × role multiplier, awarded when the task is **approved into Done** (by the lead or an admin).
   - Defaults are Lead 1.0, Collab 0.7, Assistant 0.3, configurable in Settings.
   - A task can have several people in each role.
+  - **Nobody signs off their own work.** Approving into Done is refused when the approver is the **only** `Lead`
+    assignee on the task (409 `needs_other_approver`): another lead of that committee, or any board member, has to
+    approve it. A task with several Leads may be approved by one of them — the other Lead is the second pair of eyes.
+    The same holds for a plain move into Done, including when **approval is switched off** in Settings.
+  - **A task that still holds live awards can't be archived** (409 `reopen_first`): reopen it first, which reverses
+    the awards with a reason, otherwise the card would leave the board while its points stayed on the leaderboard.
   - **An award is a snapshot.** The row keeps the base points, the role, the multiplier used, the event and the
     **committee as of the moment of the award**. Changing the multipliers in Settings, editing the task's base points
     or later moving the task to another committee never rewrites history: reporting reads `points_awards`, never the

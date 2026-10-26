@@ -26,6 +26,7 @@ public static class AuthRateLimiting
     {
         services.AddSingleton<EmailRateLimiter>();
         services.AddSingleton<PublicAttemptLimiter>();
+        services.AddSingleton<MentionEmailLimiter>();
         services.AddRateLimiter(o =>
         {
             o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -37,6 +38,7 @@ public static class AuthRateLimiting
             o.AddPolicy(CheckInRateLimiting.Scan, http => CheckInRateLimiting.PerUser(CheckInRateLimiting.Scan, http, s => s.CheckInPermitLimit));
             o.AddPolicy(CheckInRateLimiting.Search, http => CheckInRateLimiting.PerUser(CheckInRateLimiting.Search, http, s => s.CheckInSearchPermitLimit));
             o.AddPolicy(CheckInRateLimiting.Read, http => CheckInRateLimiting.PerUser(CheckInRateLimiting.Read, http, s => s.CheckInReadPermitLimit));
+            o.AddPolicy(TaskRateLimiting.Write, http => TaskRateLimiting.PerUser(TaskRateLimiting.Write, http));
         });
         return services;
     }
@@ -219,4 +221,61 @@ public static class CheckInRateLimiting
             QueueLimit = 0,
         });
     }
+}
+
+/// <summary>
+/// One fixed window per signed-in user for every mutating task and committee route (<c>tasks-write</c>). A board or a
+/// task dialog is a handful of writes per minute even when someone is dragging cards around; this keeps one account
+/// from using the write paths — each of which fans out into activity rows, outbox messages and audit entries — as an
+/// amplifier. Anonymous requests (rejected with 401 later) fall back to a per-IP bucket, exactly like the check-in
+/// desk limiter. Limits come from <c>RateLimiting:TasksWritePermitLimit</c> / <c>:TasksWriteWindowSeconds</c>.
+/// </summary>
+public static class TaskRateLimiting
+{
+    public const string Write = "tasks-write";
+
+    internal static RateLimitPartition<string> PerUser(string policy, HttpContext http)
+    {
+        var s = http.RequestServices.GetRequiredService<IOptions<RateLimitSettings>>().Value;
+        var userId = http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var key = userId is { Length: > 0 } ? "user:" + userId : "ip:" + AuthRateLimiting.ClientIp(http);
+        return RateLimitPartition.GetFixedWindowLimiter($"{policy}|{key}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = Math.Max(1, s.TasksWritePermitLimit),
+            Window = TimeSpan.FromSeconds(Math.Max(1, s.TasksWriteWindowSeconds)),
+            QueueLimit = 0,
+        });
+    }
+}
+
+/// <summary>
+/// The @mention email budget: how many recipients one author can trigger per window, counted the way
+/// <see cref="PublicAttemptLimiter.TryEmails"/> counts public checkout emails. A comment may name ten people, so
+/// without this one goon could mail the whole organization in a few minutes. Overflow recipients are dropped
+/// silently and counted in the audit entry; the comment itself is still posted.
+/// </summary>
+public sealed class MentionEmailLimiter : IDisposable
+{
+    private readonly PartitionedRateLimiter<string> _emails;
+
+    public MentionEmailLimiter(IOptions<RateLimitSettings> options)
+    {
+        var s = options.Value;
+        _emails = PartitionedRateLimiter.Create<string, string>(key =>
+            RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = Math.Max(1, s.MentionEmailsPerAuthorPermitLimit),
+                Window = TimeSpan.FromSeconds(Math.Max(1, s.MentionEmailsPerAuthorWindowSeconds)),
+                QueueLimit = 0,
+            }));
+    }
+
+    /// <summary>One permit = one mention email. False means this recipient is dropped.</summary>
+    public bool TryRecipient(Guid authorUserId)
+    {
+        using var lease = _emails.AttemptAcquire(authorUserId.ToString());
+        return lease.IsAcquired;
+    }
+
+    public void Dispose() => _emails.Dispose();
 }

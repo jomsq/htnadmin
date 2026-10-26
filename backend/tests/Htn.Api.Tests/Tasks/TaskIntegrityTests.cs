@@ -75,7 +75,7 @@ public sealed class TaskIntegrityTests(HtnApiFactory factory) : IClassFixture<Ht
         await AssertRejectedAsync($"UPDATE tasks SET number = 999, reference = 'HTN-999' WHERE id = {id}", "immutable");
         await AssertRejectedAsync($"UPDATE tasks SET reference = 'HTN-999' WHERE id = {id}", "immutable");
         await AssertRejectedAsync($"DELETE FROM task_comments WHERE id = {commentId}", "never removed");
-        await AssertRejectedAsync($"UPDATE task_comments SET author_id = gen_random_uuid() WHERE id = {commentId}", "immutable");
+        await AssertRejectedAsync($"UPDATE task_comments SET author_user_id = gen_random_uuid() WHERE id = {commentId}", "immutable");
         await AssertRejectedAsync($"DELETE FROM task_attachments WHERE id = {attachmentId}", "never deleted");
         await AssertRejectedAsync($"UPDATE task_attachments SET file_name = 'other.pdf' WHERE id = {attachmentId}", "removal stamp");
 
@@ -95,13 +95,13 @@ public sealed class TaskIntegrityTests(HtnApiFactory factory) : IClassFixture<Ht
             new { name = "Pia Santos" }))).GetProperty("id").GetGuid();
 
         await AssertRejectedAsync(
-            $"INSERT INTO task_assignees (id, task_id, volunteer_id, role, added_at) VALUES (gen_random_uuid(), {id}, {volunteer}, 'Lead', now())",
+            $"INSERT INTO task_assignees (id, task_id, event_id, volunteer_id, role, added_at) VALUES (gen_random_uuid(), {id}, {s.EventId}, {volunteer}, 'Lead', now())",
             "ck_task_assignees_volunteer_role");
         await AssertRejectedAsync(
-            $"INSERT INTO task_assignees (id, task_id, person_id, volunteer_id, role, added_at) VALUES (gen_random_uuid(), {id}, {s.Lead.PersonId}, {volunteer}, 'Assistant', now())",
+            $"INSERT INTO task_assignees (id, task_id, event_id, person_id, volunteer_id, role, added_at) VALUES (gen_random_uuid(), {id}, {s.EventId}, {s.Lead.PersonId}, {volunteer}, 'Assistant', now())",
             "ck_task_assignees_who");
         await AssertRejectedAsync(
-            $"INSERT INTO task_assignees (id, task_id, role, added_at) VALUES (gen_random_uuid(), {id}, 'Lead', now())",
+            $"INSERT INTO task_assignees (id, task_id, event_id, role, added_at) VALUES (gen_random_uuid(), {id}, {s.EventId}, 'Lead', now())",
             "ck_task_assignees_who");
     }
 

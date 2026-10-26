@@ -1,4 +1,5 @@
 using Htn.Domain.Committees;
+using Htn.Domain.Organization;
 using Htn.Infrastructure.Data;
 using Htn.Infrastructure.Email.Templates;
 using Microsoft.EntityFrameworkCore;
@@ -22,20 +23,28 @@ public sealed class TaskEmails(HtnDbContext db, EmailRenderer renderer, IOptions
         if (comment is null || comment.DeletedAt is not null) return null;
         var task = await db.Tasks.AsNoTracking().SingleOrDefaultAsync(t => t.Id == comment.TaskId);
         if (task is null) return null;
-        // The recipient must still be a person with an active login.
+        // The recipient must still be a person with an active login...
         var person = await (
             from pr in db.People.AsNoTracking()
             join u in db.Users.AsNoTracking() on (Guid?)pr.Id equals u.PersonId
             where pr.Id == p.PersonId && pr.IsActive && u.IsActive
-            select new { pr.FirstName }).FirstOrDefaultAsync();
+            select new { pr.FirstName, pr.Level }).FirstOrDefaultAsync();
         if (person is null) return null;
+        // ...and must still be allowed to see that board, checked again here and not only when the mention was
+        // queued: between the comment and the send they may have left the committee or the organization. Board
+        // members are admins on every board; everyone else has to be on an active committee of the task's event.
+        if (person.Level != PersonLevel.Board
+            && !await db.CommitteeMembers.AsNoTracking().AnyAsync(m =>
+                m.EventId == task.EventId && m.PersonId == p.PersonId && m.LeftAt == null
+                && db.Committees.Any(c => c.Id == m.CommitteeId && c.IsActive)))
+            return null;
 
         var ev = await db.Events.AsNoTracking().Where(e => e.Id == task.EventId).Select(e => e.Name).SingleAsync();
         var committee = await db.Committees.AsNoTracking().Where(c => c.Id == task.CommitteeId).Select(c => c.Name).SingleAsync();
         var author = await (
             from u in db.Users.AsNoTracking()
             join pr in db.People.AsNoTracking() on u.PersonId equals (Guid?)pr.Id
-            where u.Id == comment.AuthorId
+            where u.Id == comment.AuthorUserId
             select pr.FirstName + " " + pr.LastName).FirstOrDefaultAsync() ?? "A teammate";
 
         var excerpt = comment.Body.Length > ExcerptMaxLength ? comment.Body[..ExcerptMaxLength] + "…" : comment.Body;

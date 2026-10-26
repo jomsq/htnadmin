@@ -23,6 +23,9 @@ public sealed class TaskItem
     public const int MaxBasePoints = 1000;
     public const int MaxLabels = 5;
     public const int LabelMaxLength = 30;
+
+    /// <summary>All labels together, comma-joined, stay inside this many characters (mirrored by <c>ck_tasks_labels</c>).</summary>
+    public const int LabelsTotalMaxLength = 160;
     public const int ReasonMaxLength = 500;
     public const int MaxSortOrder = 1_000_000;
     public const int ReferenceMaxLength = 20;
@@ -185,10 +188,18 @@ public sealed class TaskItem
         Touch(at, actorId);
     }
 
-    /// <summary>Takes the card off the board with a reason. Nothing is deleted.</summary>
-    public void Archive(string reason, DateTimeOffset at, Guid? actorId)
+    /// <summary>
+    /// Takes the card off the board with a reason. Nothing is deleted.
+    /// <para>
+    /// A task that still holds live <see cref="PointsAward"/> rows cannot be archived: the card would leave the
+    /// default board while the points it handed out stayed live on the leaderboard. Reopen it first (which reverses
+    /// the awards with a reason), then archive.
+    /// </para>
+    /// </summary>
+    public void Archive(string reason, bool hasLiveAwards, DateTimeOffset at, Guid? actorId)
     {
         if (IsArchived) throw new DomainException("This task is already archived.");
+        if (hasLiveAwards) throw new DomainException("This task still has live points awards. Reopen it first.");
         // The reason is checked before anything changes, so a refused archive leaves the card untouched.
         ArchiveReason = TaskRules.Required(reason, "Reason", ReasonMaxLength);
         IsArchived = true;
@@ -267,6 +278,9 @@ public static class TaskRules
             if (!cleaned.Any(l => string.Equals(l, label, StringComparison.OrdinalIgnoreCase))) cleaned.Add(label);
         }
         if (cleaned.Count > TaskItem.MaxLabels) throw new DomainException($"A task can have at most {TaskItem.MaxLabels} labels.");
+        // Labels are stored as one text[] column, so their combined length is bounded too (ck_tasks_labels).
+        if (string.Join(",", cleaned).Length > TaskItem.LabelsTotalMaxLength)
+            throw new DomainException($"All labels together must be at most {TaskItem.LabelsTotalMaxLength} characters.");
         return cleaned;
     }
 }

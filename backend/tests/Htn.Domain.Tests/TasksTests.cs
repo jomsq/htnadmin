@@ -42,6 +42,13 @@ public class TaskItemTests
         Assert.Equal(["Venue", "AV"], TaskRules.CleanLabels([" Venue ", "venue", "AV", ""]));
         Assert.Throws<DomainException>(() => TaskRules.CleanLabels(["a", "b", "c", "d", "e", "f"]));
         Assert.Throws<DomainException>(() => TaskRules.CleanLabels([new string('x', 31)]));
+        // All of them together are bounded too, mirroring ck_tasks_labels. The worst case the per-label rules allow
+        // is five 30-character labels = 5 × 30 + 4 separators = 154 characters, which is inside the 160 the column
+        // check enforces, so the combined limit only ever bites on a hand-written INSERT (see TaskGuards2Tests).
+        var longest = Enumerable.Range(0, TaskItem.MaxLabels)
+            .Select(i => new string((char)('a' + i), TaskItem.LabelMaxLength)).ToList();
+        Assert.Equal(TaskItem.MaxLabels, TaskRules.CleanLabels(longest).Count);
+        Assert.True(string.Join(",", longest).Length <= TaskItem.LabelsTotalMaxLength);
     }
 
     [Fact]
@@ -76,13 +83,15 @@ public class TaskItemTests
     public void Archiving_needs_a_reason_and_freezes_the_card()
     {
         var task = New();
-        Assert.Throws<DomainException>(() => task.Archive("", Now, null));
-        task.Archive("Duplicate card.", Now, null);
+        Assert.Throws<DomainException>(() => task.Archive("", hasLiveAwards: false, Now, null));
+        // A card that still handed out live points can't leave the board: reopen it first.
+        Assert.Throws<DomainException>(() => task.Archive("Duplicate card.", hasLiveAwards: true, Now, null));
+        task.Archive("Duplicate card.", hasLiveAwards: false, Now, null);
         Assert.True(task.IsArchived);
         Assert.False(task.IsOpen);
         Assert.Equal("Duplicate card.", task.ArchiveReason);
         Assert.Throws<DomainException>(() => task.MoveTo(TaskBoardStatus.Review, 1, Now, null));
-        Assert.Throws<DomainException>(() => task.Archive("Again.", Now, null));
+        Assert.Throws<DomainException>(() => task.Archive("Again.", hasLiveAwards: false, Now, null));
 
         task.Restore(Now, null);
         Assert.False(task.IsArchived);

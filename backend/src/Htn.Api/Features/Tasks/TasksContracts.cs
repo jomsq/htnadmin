@@ -13,7 +13,18 @@ public sealed record TaskBoardDto(bool CanCreateTask, IReadOnlyList<BoardCommitt
 
 public sealed record BoardCommitteeDto(Guid Id, string Name, bool CanManage);
 
-public sealed record TaskColumnDto(TaskBoardStatus Status, int Count, IReadOnlyList<TaskCardDto> Cards);
+/// <summary>
+/// One column of the board. <c>Count</c> is how many cards the column really holds and <c>HasMore</c> says whether
+/// <c>Cards</c> is only part of it: the Done column is capped at the newest <see cref="TaskBoardLimits.DoneCards"/>
+/// cards (a finished event's Done pile grows without end), every other column is complete.
+/// </summary>
+public sealed record TaskColumnDto(TaskBoardStatus Status, int Count, bool HasMore, IReadOnlyList<TaskCardDto> Cards);
+
+public static class TaskBoardLimits
+{
+    /// <summary>How many Done cards the board returns, newest first.</summary>
+    public const int DoneCards = 50;
+}
 
 public sealed record TaskCardDto(
     Guid Id, string Reference, string Title, Guid CommitteeId, string CommitteeName,
@@ -38,6 +49,10 @@ public sealed record TaskDetailDto(
     DateTimeOffset? ApprovedAt, string? ApprovedByName,
     bool RequireTaskApproval, MultipliersDto Multipliers, PresetsDto Presets,
     bool CanEdit, bool CanWork, bool CanApprove, bool CanComment,
+    // needsOtherApprover: this caller holds Tasks.Manage but is the only Lead on the card, so canApprove is false
+    // only because nobody signs off their own work. Another lead of the committee, or any board member, has to
+    // approve it (409 needs_other_approver if they try anyway).
+    bool NeedsOtherApprover,
     IReadOnlyList<TaskAssigneeDto> Assignees, IReadOnlyList<ChecklistItemDto> Checklist,
     IReadOnlyList<TaskAttachmentDto> Attachments, IReadOnlyList<TaskCommentDto> Comments,
     IReadOnlyList<TaskActivityDto> Activity, IReadOnlyList<TaskAwardDto> Awards);
@@ -102,6 +117,8 @@ public static class TaskErrorCodes
     public const string NotDone = "not_done";
     public const string NeedsApproval = "needs_approval";
     public const string NoLead = "no_lead";
+    public const string NeedsOtherApprover = "needs_other_approver";
+    public const string ReopenFirst = "reopen_first";
     public const string AlreadyAssigned = "already_assigned";
     public const string VolunteerRole = "volunteer_role";
     public const string NotAuthor = "not_author";

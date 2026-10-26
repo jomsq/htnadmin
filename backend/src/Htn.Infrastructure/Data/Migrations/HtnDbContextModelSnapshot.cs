@@ -270,9 +270,6 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.HasIndex("PersonId")
                         .HasDatabaseName("ix_committee_members_person_id");
 
-                    b.HasIndex("CommitteeId", "EventId")
-                        .HasDatabaseName("ix_committee_members_committee_id_event_id");
-
                     b.HasIndex("CommitteeId", "JoinedAt")
                         .HasDatabaseName("ix_committee_members_committee_id_joined_at");
 
@@ -340,12 +337,12 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.HasKey("Id")
                         .HasName("pk_event_volunteers");
 
+                    b.HasAlternateKey("Id", "EventId")
+                        .HasName("ak_event_volunteers_id_event_id");
+
                     b.HasIndex("CommitteeId")
                         .HasDatabaseName("ix_event_volunteers_committee_id")
                         .HasFilter("committee_id IS NOT NULL");
-
-                    b.HasIndex("CommitteeId", "EventId")
-                        .HasDatabaseName("ix_event_volunteers_committee_id_event_id");
 
                     b.HasIndex("EventId", "Name")
                         .HasDatabaseName("ix_event_volunteers_event_id_name");
@@ -533,6 +530,8 @@ namespace Htn.Infrastructure.Data.Migrations
                             t.HasCheckConstraint("ck_events_slug", "slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND char_length(slug) BETWEEN 3 AND 60");
 
                             t.HasCheckConstraint("ck_events_status", "status IN ('Draft', 'OnSale', 'Closed')");
+
+                            t.HasCheckConstraint("ck_events_task_counter", "task_counter >= 0");
                         });
                 });
 
@@ -1830,7 +1829,7 @@ namespace Htn.Infrastructure.Data.Migrations
 
                             t.HasCheckConstraint("ck_points_awards_points", "points = round(base_points * multiplier, 2)");
 
-                            t.HasCheckConstraint("ck_points_awards_reversal", "(reversed_at IS NULL) = (reversal_reason IS NULL) AND (reversal_reason IS NULL OR char_length(reversal_reason) BETWEEN 1 AND 500)");
+                            t.HasCheckConstraint("ck_points_awards_reversal", "(reversed_at IS NULL) = (reversal_reason IS NULL) AND (reversed_at IS NULL OR reversed_at >= awarded_at) AND (reversal_reason IS NULL OR char_length(reversal_reason) BETWEEN 1 AND 500)");
 
                             t.HasCheckConstraint("ck_points_awards_role", "role IN ('Lead', 'Collab', 'Assistant')");
                         });
@@ -1894,6 +1893,10 @@ namespace Htn.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("added_by_id");
 
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
                     b.Property<Guid?>("PersonId")
                         .HasColumnType("uuid")
                         .HasColumnName("person_id");
@@ -1915,15 +1918,12 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.HasKey("Id")
                         .HasName("pk_task_assignees");
 
-                    b.HasIndex("PersonId")
-                        .HasDatabaseName("ix_task_assignees_person_id")
-                        .HasFilter("person_id IS NOT NULL");
-
                     b.HasIndex("TaskId")
                         .HasDatabaseName("ix_task_assignees_task_id");
 
-                    b.HasIndex("VolunteerId")
-                        .HasDatabaseName("ix_task_assignees_volunteer_id");
+                    b.HasIndex("PersonId", "TaskId")
+                        .HasDatabaseName("ix_task_assignees_person_id_task_id")
+                        .HasFilter("person_id IS NOT NULL");
 
                     b.HasIndex("TaskId", "PersonId")
                         .IsUnique()
@@ -1934,6 +1934,9 @@ namespace Htn.Infrastructure.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_task_assignees_volunteer")
                         .HasFilter("volunteer_id IS NOT NULL");
+
+                    b.HasIndex("VolunteerId", "EventId")
+                        .HasDatabaseName("ix_task_assignees_volunteer_id_event_id");
 
                     b.ToTable("task_assignees", null, t =>
                         {
@@ -2059,9 +2062,9 @@ namespace Htn.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<Guid>("AuthorId")
+                    b.Property<Guid>("AuthorUserId")
                         .HasColumnType("uuid")
-                        .HasColumnName("author_id");
+                        .HasColumnName("author_user_id");
 
                     b.Property<string>("Body")
                         .IsRequired()
@@ -2103,6 +2106,9 @@ namespace Htn.Infrastructure.Data.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_task_comments");
+
+                    b.HasIndex("AuthorUserId")
+                        .HasDatabaseName("ix_task_comments_author_user_id");
 
                     b.HasIndex("TaskId", "CreatedAt")
                         .HasDatabaseName("ix_task_comments_task_id_created_at");
@@ -2227,16 +2233,28 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.HasKey("Id")
                         .HasName("pk_tasks");
 
-                    b.HasIndex("CommitteeId", "EventId")
-                        .HasDatabaseName("ix_tasks_committee_id_event_id");
+                    b.HasAlternateKey("Id", "EventId")
+                        .HasName("ak_tasks_id_event_id");
 
                     b.HasIndex("CommitteeId", "Status")
                         .HasDatabaseName("ix_tasks_committee_id_status")
                         .HasFilter("NOT is_archived");
 
+                    b.HasIndex("EventId", "ArchivedAt")
+                        .HasDatabaseName("ix_tasks_event_id_archived_at")
+                        .HasFilter("is_archived");
+
                     b.HasIndex("EventId", "Number")
                         .IsUnique()
                         .HasDatabaseName("ux_tasks_event_number");
+
+                    b.HasIndex("EventId", "CommitteeId", "SortOrder")
+                        .HasDatabaseName("ix_tasks_event_id_committee_id_sort_order")
+                        .HasFilter("NOT is_archived");
+
+                    b.HasIndex("EventId", "SortOrder", "CreatedAt")
+                        .HasDatabaseName("ix_tasks_event_id_sort_order_created_at")
+                        .HasFilter("NOT is_archived");
 
                     b.HasIndex("EventId", "Status", "SortOrder")
                         .HasDatabaseName("ix_tasks_event_id_status_sort_order")
@@ -2252,7 +2270,7 @@ namespace Htn.Infrastructure.Data.Migrations
 
                             t.HasCheckConstraint("ck_tasks_description", "description IS NULL OR char_length(description) BETWEEN 1 AND 4000");
 
-                            t.HasCheckConstraint("ck_tasks_labels", "array_position(labels, NULL) IS NULL AND cardinality(labels) <= 5");
+                            t.HasCheckConstraint("ck_tasks_labels", "array_position(labels, NULL) IS NULL AND array_position(labels, '') IS NULL AND cardinality(labels) <= 5 AND char_length(array_to_string(labels, ',')) <= 160");
 
                             t.HasCheckConstraint("ck_tasks_number", "number > 0");
 
@@ -2933,13 +2951,6 @@ namespace Htn.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("Htn.Domain.Tasks.PointsAward", b =>
                 {
-                    b.HasOne("Htn.Domain.Committees.Committee", null)
-                        .WithMany()
-                        .HasForeignKey("CommitteeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_points_awards_committees_committee_id");
-
                     b.HasOne("Htn.Domain.Events.Event", null)
                         .WithMany()
                         .HasForeignKey("EventId")
@@ -2954,12 +2965,21 @@ namespace Htn.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasConstraintName("fk_points_awards_people_person_id");
 
-                    b.HasOne("Htn.Domain.Tasks.TaskItem", null)
+                    b.HasOne("Htn.Domain.Committees.Committee", null)
                         .WithMany()
-                        .HasForeignKey("TaskId")
+                        .HasForeignKey("CommitteeId", "EventId")
+                        .HasPrincipalKey("Id", "EventId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
-                        .HasConstraintName("fk_points_awards_tasks_task_id");
+                        .HasConstraintName("fk_points_awards_committees_committee_id_event_id");
+
+                    b.HasOne("Htn.Domain.Tasks.TaskItem", null)
+                        .WithMany()
+                        .HasForeignKey("TaskId", "EventId")
+                        .HasPrincipalKey("Id", "EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_points_awards_tasks_task_id_event_id");
                 });
 
             modelBuilder.Entity("Htn.Domain.Tasks.TaskActivity", b =>
@@ -2982,16 +3002,18 @@ namespace Htn.Infrastructure.Data.Migrations
 
                     b.HasOne("Htn.Domain.Tasks.TaskItem", null)
                         .WithMany()
-                        .HasForeignKey("TaskId")
+                        .HasForeignKey("TaskId", "EventId")
+                        .HasPrincipalKey("Id", "EventId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
-                        .HasConstraintName("fk_task_assignees_tasks_task_id");
+                        .HasConstraintName("fk_task_assignees_tasks_task_id_event_id");
 
                     b.HasOne("Htn.Domain.Committees.EventVolunteer", null)
                         .WithMany()
-                        .HasForeignKey("VolunteerId")
+                        .HasForeignKey("VolunteerId", "EventId")
+                        .HasPrincipalKey("Id", "EventId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .HasConstraintName("fk_task_assignees_event_volunteers_volunteer_id");
+                        .HasConstraintName("fk_task_assignees_event_volunteers_volunteer_id_event_id");
                 });
 
             modelBuilder.Entity("Htn.Domain.Tasks.TaskAttachment", b =>
@@ -3023,6 +3045,13 @@ namespace Htn.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("Htn.Domain.Tasks.TaskComment", b =>
                 {
+                    b.HasOne("Htn.Infrastructure.Identity.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("AuthorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_task_comments_users_author_user_id");
+
                     b.HasOne("Htn.Domain.Tasks.TaskItem", null)
                         .WithMany()
                         .HasForeignKey("TaskId")

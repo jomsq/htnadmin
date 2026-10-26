@@ -32,6 +32,8 @@ public sealed class TaskScopeResolver(HtnDbContext db, ICurrentUser me) : ITaskS
             .SingleOrDefaultAsync(ct);
         return _cache[taskId] = row is null ? null : new TaskScopeInfo(taskId, row.CommitteeId, row.EventId, row.IsAssignee);
     }
+
+    public void Invalidate(Guid taskId) => _cache.Remove(taskId);
 }
 
 /// <summary>

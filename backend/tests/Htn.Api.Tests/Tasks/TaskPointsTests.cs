@@ -37,7 +37,10 @@ public sealed class TaskPointsTests(HtnApiFactory factory) : IClassFixture<HtnAp
         Assert.Empty(before.GetProperty("awards").EnumerateArray());
 
         Assert.Equal(HttpStatusCode.OK, (await MoveAsync(s.LeadClient, id, "Review")).StatusCode);
-        var approved = await ApproveAsync(s.LeadClient, id);
+        // The lead is the only Lead on this card, so she can't sign it off herself (see TaskApprovalTests): the
+        // board does it.
+        Assert.Equal("needs_other_approver", (await ApiClient.JsonAsync(await ApproveAsync(s.LeadClient, id))).Code());
+        var approved = await ApproveAsync(s.Board, id);
         Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
         var detail = await ApiClient.JsonAsync(approved);
         Assert.Equal("Done", detail.Status());
@@ -117,8 +120,10 @@ public sealed class TaskPointsTests(HtnApiFactory factory) : IClassFixture<HtnAp
     {
         var s = await SceneAsync(factory);
         var id = await CreateTaskAsync(s.Board, s.EventId, s.Committee, basePoints: 20);
-        await AssignOkAsync(s.Board, id, s.Lead.PersonId, "Lead");
-        await AssignOkAsync(s.Board, id, s.Worker.PersonId, "Collab");
+        // The worker leads this card and the sibling committee's lead collaborates, so the committee lead (who is on
+        // neither role) is free to approve it at the end.
+        await AssignOkAsync(s.Board, id, s.Worker.PersonId, "Lead");
+        await AssignOkAsync(s.Board, id, s.OtherLead.PersonId, "Collab");
 
         Assert.Equal(HttpStatusCode.OK, (await MoveAsync(s.WorkerClient, id, "Review")).StatusCode);
         var refused = await MoveAsync(s.WorkerClient, id, "Done");
@@ -185,7 +190,7 @@ public sealed class TaskPointsTests(HtnApiFactory factory) : IClassFixture<HtnAp
         Assert.Equal("not_done", (await ApiClient.JsonAsync(await ReopenAsync(s.LeadClient, id, "Again."))).Code());
 
         // Finishing it again awards a fresh set; the reversed rows are untouched history.
-        Assert.Equal(HttpStatusCode.OK, (await ApproveAsync(s.LeadClient, id)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await ApproveAsync(s.Board, id)).StatusCode);
         var after = await AwardsAsync(id);
         Assert.Equal(4, after.Count);
         Assert.Equal(2, after.Count(a => a.ReversedAt is null));
@@ -261,8 +266,8 @@ public sealed class TaskPointsTests(HtnApiFactory factory) : IClassFixture<HtnAp
     {
         var s = await SceneAsync(factory);
         var id = await CreateTaskAsync(s.Board, s.EventId, s.Committee, basePoints: 40);
-        await AssignOkAsync(s.Board, id, s.Lead.PersonId, "Lead");
-        await AssignOkAsync(s.Board, id, s.Worker.PersonId, "Collab");
+        await AssignOkAsync(s.Board, id, s.Worker.PersonId, "Lead");
+        await AssignOkAsync(s.Board, id, s.Lead.PersonId, "Collab");
 
         var results = await Task.WhenAll(ApproveAsync(s.Board, id), ApproveAsync(s.LeadClient, id));
         Assert.All(results, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));

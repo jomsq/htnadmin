@@ -58,6 +58,20 @@ public sealed class RateLimitSettings
     public int PublicEmailsPerIpPermitLimit { get; set; } = 30;
     public int PublicEmailsPerIpWindowSeconds { get; set; } = 60 * 60;
 
+    /// <summary>
+    /// Mutating task and committee requests per signed-in user, per <see cref="TasksWriteWindowSeconds"/> window. A
+    /// busy board session is a few writes a minute; 60 leaves room for drag-and-drop without letting one account
+    /// hammer the write paths.
+    /// </summary>
+    public int TasksWritePermitLimit { get; set; } = 60;
+
+    public int TasksWriteWindowSeconds { get; set; } = 60;
+
+    /// <summary>@mention email recipients one comment author can trigger per window (one permit per recipient).</summary>
+    public int MentionEmailsPerAuthorPermitLimit { get; set; } = 30;
+
+    public int MentionEmailsPerAuthorWindowSeconds { get; set; } = 60 * 60;
+
     /// <summary>Public registrations per normalized buyer email.</summary>
     public int RegisterPerEmailPermitLimit { get; set; } = 5;
     public int RegisterPerEmailWindowSeconds { get; set; } = 60 * 60;

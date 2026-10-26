@@ -45,6 +45,12 @@ public sealed record TaskScopeInfo(Guid TaskId, Guid CommitteeId, Guid EventId, 
 public interface ITaskScopeResolver
 {
     Task<TaskScopeInfo?> ResolveAsync(Guid taskId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Forgets the cached answer for a task. Endpoints call this after they hand a card to another committee or
+    /// change its assignees, so the permission flags in the response describe the card as it is now.
+    /// </summary>
+    void Invalidate(Guid taskId);
 }
 
 /// <summary>

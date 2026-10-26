@@ -21,6 +21,8 @@ internal sealed class EventConfiguration : IEntityTypeConfiguration<Event>
             t.HasCheckConstraint("ck_events_slug",
                 $"slug ~ '{EventSlug.Pattern}' AND char_length(slug) BETWEEN {EventSlug.MinLength} AND {EventSlug.MaxLength}");
             t.HasCheckConstraint("ck_events_period", "ends_at > starts_at");
+            // The task reference counter only ever goes up (NextTaskNumber under the event row lock).
+            t.HasCheckConstraint("ck_events_task_counter", "task_counter >= 0");
             t.HasCheckConstraint("ck_events_capacity", $"capacity BETWEEN {Event.MinCapacity} AND {Event.MaxCapacity}");
             t.HasCheckConstraint("ck_events_membership",
                 $"(is_main_event AND membership_fee BETWEEN 0 AND {Event.MaxMembershipFee} " +

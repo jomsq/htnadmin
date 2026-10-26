@@ -23,6 +23,25 @@ internal static class TaskOps
     public static Task<bool> HasLeadAsync(HtnDbContext db, Guid taskId, CancellationToken ct) =>
         db.TaskAssignees.AnyAsync(a => a.TaskId == taskId && a.Role == TaskAssigneeRole.Lead, ct);
 
+    /// <summary>The people holding the Lead role on this task (volunteers never lead).</summary>
+    public static async Task<List<Guid>> LeadPersonIdsAsync(HtnDbContext db, Guid taskId, CancellationToken ct) =>
+        await db.TaskAssignees.AsNoTracking()
+            .Where(a => a.TaskId == taskId && a.Role == TaskAssigneeRole.Lead && a.PersonId != null)
+            .Select(a => a.PersonId!.Value).ToListAsync(ct);
+
+    /// <summary>
+    /// Nobody signs off their own work (user decision): approving into Done is refused when the approver is the
+    /// <b>only</b> Lead on the card. A card with several Leads is fine even when the approver is one of them — the
+    /// other Lead is the second pair of eyes. Any other lead of that committee, and every board member, can always
+    /// approve, so a card is never stuck.
+    /// </summary>
+    public static bool IsSoleLead(IReadOnlyCollection<Guid> leadPersonIds, Guid? personId) =>
+        personId is { } me && leadPersonIds.Count == 1 && leadPersonIds.Contains(me);
+
+    /// <summary>True when this caller may not be the one to finish this task (see <see cref="IsSoleLead"/>).</summary>
+    public static async Task<bool> NeedsOtherApproverAsync(HtnDbContext db, Guid taskId, Guid? personId, CancellationToken ct) =>
+        personId is not null && IsSoleLead(await LeadPersonIdsAsync(db, taskId, ct), personId);
+
     public static Task<bool> HasLiveAwardsAsync(HtnDbContext db, Guid taskId, CancellationToken ct) =>
         db.PointsAwards.AnyAsync(a => a.TaskId == taskId && a.ReversedAt == null, ct);
 
@@ -66,11 +85,16 @@ internal static class TaskOps
         return Math.Min(max + 100, TaskItem.MaxSortOrder);
     }
 
-    /// <summary>Locks the task row until the current transaction ends, so approve/reopen never interleave.</summary>
+    /// <summary>
+    /// Locks the task row until the current transaction ends, so approve, reopen and assignee changes never
+    /// interleave. <c>FOR NO KEY UPDATE</c>, not <c>FOR UPDATE</c>: it still serializes the writers that matter, but
+    /// it does not block the foreign keys pointing at the row, so an open approve never stalls a comment, checklist
+    /// item, attachment or activity line being inserted on the same task.
+    /// </summary>
     public static async Task LockAsync(HtnDbContext db, Guid taskId, CancellationToken ct)
     {
         if (db.Database.CurrentTransaction is null) throw new InvalidOperationException("Locking a task needs a transaction.");
-        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM tasks WHERE id = {taskId} FOR UPDATE", ct);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM tasks WHERE id = {taskId} FOR NO KEY UPDATE", ct);
     }
 
     public static string PointsText(IEnumerable<PointsAward> awards) =>

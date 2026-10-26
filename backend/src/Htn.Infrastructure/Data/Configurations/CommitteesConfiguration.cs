@@ -97,6 +97,9 @@ internal sealed class EventVolunteerConfiguration : IEntityTypeConfiguration<Eve
         b.Property(v => v.Mobile).HasMaxLength(13);
         b.Property<uint>(EventConfiguration.RowVersion).HasColumnName("xmin").HasColumnType("xid").IsRowVersion();
 
+        // Task assignees are keyed by (volunteer_id, event_id), so a volunteer can't be put on another event's card.
+        b.HasAlternateKey(v => new { v.Id, v.EventId }).HasName("ak_event_volunteers_id_event_id");
+
         // The event's volunteer pool, and the volunteers on one committee card.
         b.HasIndex(v => new { v.EventId, v.Name });
         b.HasIndex(v => v.CommitteeId).HasFilter("committee_id IS NOT NULL");

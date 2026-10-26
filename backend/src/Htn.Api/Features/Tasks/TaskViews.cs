@@ -1,4 +1,5 @@
 using Htn.Api.Auth;
+using Htn.Api.Common;
 using Htn.Domain.Settings;
 using Htn.Domain.Tasks;
 using Htn.Infrastructure.Data;
@@ -131,7 +132,7 @@ internal static class TaskViews
 
     // ---------- Detail ----------
 
-    public sealed record DetailFlags(bool CanEdit, bool CanWork, bool CanApprove, bool CanComment);
+    public sealed record DetailFlags(bool CanEdit, bool CanWork, bool CanApprove, bool CanComment, bool NeedsOtherApprover);
 
     public static async Task<TaskDetailDto> DetailAsync(
         HtnDbContext db, TaskItem task, DetailFlags flags, Guid? myUserId, bool isBoard, DateTimeOffset now, CancellationToken ct)
@@ -167,7 +168,7 @@ internal static class TaskViews
         var personNames = await PersonNamesAsync(db, personIds, ct);
         var volunteerNames = await VolunteerNamesAsync(db, assignees.Select(a => a.VolunteerId).OfType<Guid>().Distinct().ToList(), ct);
         var userIds = activity.Select(a => a.ActorId)
-            .Concat(comments.Select(c => (Guid?)c.AuthorId))
+            .Concat(comments.Select(c => (Guid?)c.AuthorUserId))
             .Concat(attachments.Select(a => a.UploadedById))
             .Append(task.CreatedById).Append(task.ApprovedById)
             .OfType<Guid>().Distinct().ToList();
@@ -190,7 +191,7 @@ internal static class TaskViews
             settings.RequireTaskApproval,
             new MultipliersDto(settings.LeadMultiplier, settings.CollabMultiplier, settings.AssistantMultiplier),
             new PresetsDto(settings.PresetSmall, settings.PresetMedium, settings.PresetLarge, settings.PresetXl),
-            flags.CanEdit, flags.CanWork, flags.CanApprove, flags.CanComment,
+            flags.CanEdit, flags.CanWork, flags.CanApprove, flags.CanComment, flags.NeedsOtherApprover,
             assignees.Select(a =>
             {
                 var name = a.PersonId is { } pid
@@ -206,13 +207,13 @@ internal static class TaskViews
                 $"/api/tasks/{task.Id}/attachments/{a.Id}")).ToList(),
             comments.Select(c =>
             {
-                var author = actorNames.GetValueOrDefault(c.AuthorId);
+                var author = actorNames.GetValueOrDefault(c.AuthorUserId);
                 // A deleted comment keeps its row for the audit trail; the body is not served to anyone.
                 return new TaskCommentDto(c.Id, author, Initials(author),
                     c.IsDeleted ? "" : c.Body,
                     c.MentionedPersonIds.Select(id => new MentionDto(id, personNames.GetValueOrDefault(id, "Unknown"))).ToList(),
                     c.CreatedAt, c.EditedAt, c.IsDeleted,
-                    !c.IsDeleted && myUserId == c.AuthorId && now - c.CreatedAt <= TaskComment.EditWindow);
+                    !c.IsDeleted && myUserId == c.AuthorUserId && now - c.CreatedAt <= TaskComment.EditWindow);
             }).ToList(),
             activity.Select(a => new TaskActivityDto(a.At,
                 a.ActorId is { } actor ? actorNames.GetValueOrDefault(actor) : null,
@@ -223,17 +224,28 @@ internal static class TaskViews
 
     // ---------- Permission flags ----------
 
-    /// <summary>The four flags the detail dialog needs, each from the same policy the endpoints enforce.</summary>
-    public static async Task<DetailFlags> FlagsAsync(IAuthorizationService auth, HttpContext http, TaskItem task)
+    /// <summary>
+    /// The flags the detail dialog needs, each from the same policy (and the same rule) the endpoints enforce.
+    /// <para>
+    /// <c>canApprove</c> is false for the sole Lead of the card, because nobody signs off their own work;
+    /// <c>needsOtherApprover</c> then says <b>why</b>, so the dialog can disable Approve with the real explanation
+    /// instead of guessing ("another committee lead or a board member has to approve this").
+    /// </para>
+    /// </summary>
+    public static async Task<DetailFlags> FlagsAsync(
+        IAuthorizationService auth, HttpContext http, HtnDbContext db, TaskItem task, ICurrentUser me, CancellationToken ct)
     {
         var scope = new TaskScope(task.Id);
         var manage = await auth.AllowsAsync(http, scope, Policies.TasksManage);
         var work = await auth.AllowsAsync(http, scope, Policies.TasksWork);
         var live = !task.IsArchived;
+        var open = live && task.Status != TaskBoardStatus.Done;
+        var soleLead = open && manage && await TaskOps.NeedsOtherApproverAsync(db, task.Id, me.PersonId, ct);
         return new DetailFlags(
-            CanEdit: manage && live && task.Status != TaskBoardStatus.Done,
-            CanWork: work && live && task.Status != TaskBoardStatus.Done,
-            CanApprove: manage && live && task.Status != TaskBoardStatus.Done,
-            CanComment: work && live);
+            CanEdit: manage && open,
+            CanWork: work && open,
+            CanApprove: manage && open && !soleLead,
+            CanComment: work && live,
+            NeedsOtherApprover: soleLead);
     }
 }

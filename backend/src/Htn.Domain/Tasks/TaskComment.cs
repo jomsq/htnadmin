@@ -21,8 +21,11 @@ public sealed class TaskComment
     public Guid Id { get; private set; }
     public Guid TaskId { get; private set; }
 
-    /// <summary>The author's user id (comments always come from someone signed in).</summary>
-    public Guid AuthorId { get; private set; }
+    /// <summary>
+    /// The author's <b>user</b> id (comments always come from someone signed in). Named and stored as
+    /// <c>author_user_id</c> so it is never mistaken for one of the person ids it sits next to.
+    /// </summary>
+    public Guid AuthorUserId { get; private set; }
 
     public string Body { get; private set; } = default!;
     public List<Guid> MentionedPersonIds { get; private set; } = [];
@@ -34,17 +37,17 @@ public sealed class TaskComment
 
     public bool IsDeleted => DeletedAt is not null;
 
-    public static TaskComment Create(Guid taskId, Guid authorId, string body, IEnumerable<Guid>? mentionedPersonIds, DateTimeOffset at)
+    public static TaskComment Create(Guid taskId, Guid authorUserId, string body, IEnumerable<Guid>? mentionedPersonIds, DateTimeOffset at)
     {
         if (taskId == Guid.Empty) throw new DomainException("A task is required.");
-        if (authorId == Guid.Empty) throw new DomainException("An author is required.");
+        if (authorUserId == Guid.Empty) throw new DomainException("An author is required.");
         var mentions = (mentionedPersonIds ?? []).Where(id => id != Guid.Empty).Distinct().ToList();
         if (mentions.Count > MaxMentions) throw new DomainException($"A comment can mention at most {MaxMentions} people.");
         return new TaskComment
         {
             Id = Guid.CreateVersion7(at),
             TaskId = taskId,
-            AuthorId = authorId,
+            AuthorUserId = authorUserId,
             Body = TaskRules.Required(body, "Comment", BodyMaxLength),
             MentionedPersonIds = mentions,
             CreatedAt = at,

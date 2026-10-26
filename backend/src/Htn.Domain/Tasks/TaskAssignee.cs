@@ -13,6 +13,13 @@ public sealed class TaskAssignee
 
     public Guid Id { get; private set; }
     public Guid TaskId { get; private set; }
+
+    /// <summary>
+    /// The task's event, carried on the row so the composite foreign keys can key the assignee to
+    /// <c>tasks (id, event_id)</c> and to <c>event_volunteers (id, event_id)</c>: a volunteer of another event can
+    /// never be put on this card.
+    /// </summary>
+    public Guid EventId { get; private set; }
     public Guid? PersonId { get; private set; }
     public Guid? VolunteerId { get; private set; }
     public TaskAssigneeRole Role { get; private set; }
@@ -32,7 +39,8 @@ public sealed class TaskAssignee
         if (!Enum.IsDefined(role)) throw new DomainException("Unknown task role.");
         return new TaskAssignee
         {
-            Id = Guid.CreateVersion7(at), TaskId = task.Id, PersonId = personId, Role = role, AddedAt = at, AddedById = actorId,
+            Id = Guid.CreateVersion7(at), TaskId = task.Id, EventId = task.EventId, PersonId = personId, Role = role,
+            AddedAt = at, AddedById = actorId,
         };
     }
 
@@ -45,7 +53,8 @@ public sealed class TaskAssignee
             throw new DomainException("A volunteer can only help as an Assistant.");
         return new TaskAssignee
         {
-            Id = Guid.CreateVersion7(at), TaskId = task.Id, VolunteerId = volunteerId, Role = role, AddedAt = at, AddedById = actorId,
+            Id = Guid.CreateVersion7(at), TaskId = task.Id, EventId = task.EventId, VolunteerId = volunteerId, Role = role,
+            AddedAt = at, AddedById = actorId,
         };
     }
 }

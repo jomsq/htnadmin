@@ -190,7 +190,7 @@ namespace Htn.Infrastructure.Data.Migrations
             // migration. Nothing here is ever deleted: a committee and a volunteer are deactivated, and a member
             // leaving is a left_at timestamp, so the row stays as history.
             migrationBuilder.Sql("""
-                CREATE FUNCTION htn_committees_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+                CREATE OR REPLACE FUNCTION htn_committees_guard() RETURNS trigger LANGUAGE plpgsql AS $$
                 BEGIN
                     IF TG_OP = 'DELETE' THEN
                         RAISE EXCEPTION 'committees are never deleted (deactivate with a reason)' USING ERRCODE = 'insufficient_privilege';
@@ -205,13 +205,15 @@ namespace Htn.Infrastructure.Data.Migrations
                     RETURN NEW;
                 END;
                 $$;
+                DROP TRIGGER IF EXISTS committees_guard ON committees;
                 CREATE TRIGGER committees_guard BEFORE UPDATE OR DELETE ON committees
                     FOR EACH ROW EXECUTE FUNCTION htn_committees_guard();
+                DROP TRIGGER IF EXISTS committees_no_truncate ON committees;
                 CREATE TRIGGER committees_no_truncate BEFORE TRUNCATE ON committees
                     FOR EACH STATEMENT EXECUTE FUNCTION htn_reject_change();
 
                 -- Membership history: append-only apart from the role and the single left_at stamp.
-                CREATE FUNCTION htn_committee_members_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+                CREATE OR REPLACE FUNCTION htn_committee_members_guard() RETURNS trigger LANGUAGE plpgsql AS $$
                 BEGIN
                     IF TG_OP = 'DELETE' THEN
                         RAISE EXCEPTION 'committee memberships are never deleted (they record left_at)' USING ERRCODE = 'insufficient_privilege';
@@ -227,12 +229,14 @@ namespace Htn.Infrastructure.Data.Migrations
                     RETURN NEW;
                 END;
                 $$;
+                DROP TRIGGER IF EXISTS committee_members_guard ON committee_members;
                 CREATE TRIGGER committee_members_guard BEFORE UPDATE OR DELETE ON committee_members
                     FOR EACH ROW EXECUTE FUNCTION htn_committee_members_guard();
+                DROP TRIGGER IF EXISTS committee_members_no_truncate ON committee_members;
                 CREATE TRIGGER committee_members_no_truncate BEFORE TRUNCATE ON committee_members
                     FOR EACH STATEMENT EXECUTE FUNCTION htn_reject_change();
 
-                CREATE FUNCTION htn_event_volunteers_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+                CREATE OR REPLACE FUNCTION htn_event_volunteers_guard() RETURNS trigger LANGUAGE plpgsql AS $$
                 BEGIN
                     IF TG_OP = 'DELETE' THEN
                         RAISE EXCEPTION 'volunteers are never deleted (deactivate with a reason)' USING ERRCODE = 'insufficient_privilege';
@@ -246,8 +250,10 @@ namespace Htn.Infrastructure.Data.Migrations
                     RETURN NEW;
                 END;
                 $$;
+                DROP TRIGGER IF EXISTS event_volunteers_guard ON event_volunteers;
                 CREATE TRIGGER event_volunteers_guard BEFORE UPDATE OR DELETE ON event_volunteers
                     FOR EACH ROW EXECUTE FUNCTION htn_event_volunteers_guard();
+                DROP TRIGGER IF EXISTS event_volunteers_no_truncate ON event_volunteers;
                 CREATE TRIGGER event_volunteers_no_truncate BEFORE TRUNCATE ON event_volunteers
                     FOR EACH STATEMENT EXECUTE FUNCTION htn_reject_change();
 

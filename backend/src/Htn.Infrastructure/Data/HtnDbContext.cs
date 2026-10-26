@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Htn.Infrastructure.Data;
 
@@ -60,6 +61,10 @@ public sealed class HtnDbContext(DbContextOptions<HtnDbContext> options)
         // Money is always decimal(12,2) (PHP).
         configurationBuilder.Properties<decimal>().HavePrecision(12, 2);
         configurationBuilder.Properties<decimal?>().HavePrecision(12, 2);
+        // The composite (child, event) foreign keys exist to make cross-event rows impossible, not to be searched.
+        configurationBuilder.Conventions.Replace<Microsoft.EntityFrameworkCore.Metadata.Conventions.ForeignKeyIndexConvention>(
+            sp => new HtnForeignKeyIndexConvention(
+                sp.GetRequiredService<Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure.ProviderConventionSetBuilderDependencies>()));
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)

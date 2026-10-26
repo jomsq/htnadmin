@@ -1,4 +1,5 @@
 using Htn.Api.Auth;
+using Microsoft.AspNetCore.RateLimiting;
 using Htn.Api.Common;
 using Htn.Api.Features.Committees;
 using Htn.Api.Features.Events;
@@ -28,7 +29,8 @@ public static class TasksEndpoints
     {
         var g = app.MapGroup("/api/events/{eventId:guid}/tasks").WithTags("Tasks");
         g.MapGet("/", Board).RequireAuthorization(Policies.TasksViewBoard);
-        g.MapPost("/", Create).RequireAuthorization(Policies.TasksManage).Validate<CreateTaskRequest>();
+        g.MapPost("/", Create).RequireAuthorization(Policies.TasksManage)
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<CreateTaskRequest>();
         return g;
     }
 
@@ -68,7 +70,17 @@ public static class TasksEndpoints
             var personId = me.PersonId;
             query = query.Where(t => db.TaskAssignees.Any(a => a.TaskId == t.Id && a.PersonId == personId));
         }
-        var tasks = await query.OrderBy(t => t.SortOrder).ThenBy(t => t.CreatedAt).ToListAsync(ct);
+
+        // Backlog → Review are bounded by the work in flight, so they are returned whole. Done only ever grows, so
+        // it is capped at the newest cards and the column says there are more (the UI shows "Showing newest 50").
+        var open = await query.Where(t => t.Status != TaskBoardStatus.Done)
+            .OrderBy(t => t.SortOrder).ThenBy(t => t.CreatedAt).ToListAsync(ct);
+        var doneQuery = query.Where(t => t.Status == TaskBoardStatus.Done);
+        var doneCount = await doneQuery.CountAsync(ct);
+        var done = await doneQuery
+            .OrderByDescending(t => t.ApprovedAt).ThenByDescending(t => t.CreatedAt).ThenByDescending(t => t.Id)
+            .Take(TaskBoardLimits.DoneCards).ToListAsync(ct);
+        var tasks = open.Concat(done).ToList();
         var data = await TaskViews.CardDataAsync(db, tasks, ct);
         var now = clock.GetUtcNow();
 
@@ -78,7 +90,8 @@ public static class TasksEndpoints
             var cards = new List<TaskCardDto>();
             foreach (var task in tasks.Where(t => t.Status == status))
                 cards.Add(TaskViews.Card(task, data, now, await CanMoveAsync(scope, board, task, data, me.PersonId, ct), me.PersonId));
-            columns.Add(new TaskColumnDto(status, cards.Count, cards));
+            var count = status == TaskBoardStatus.Done ? doneCount : cards.Count;
+            columns.Add(new TaskColumnDto(status, count, count > cards.Count, cards));
         }
         return TypedResults.Ok(new TaskBoardDto(
             board || await scope.LeadsAnyCommitteeOfEventAsync(eventId, ct), chips, columns));
@@ -94,11 +107,18 @@ public static class TasksEndpoints
         return personId is { } me && data.Assignees.TryGetValue(task.Id, out var list) && list.Any(a => a.PersonId == me);
     }
 
-    private static async Task<IResult> Mine(HtnDbContext db, ICurrentUser me, TimeProvider clock, CancellationToken ct)
+    private static async Task<IResult> Mine(
+        HttpContext http, IAuthorizationService auth, HtnDbContext db, ICurrentUser me, TimeProvider clock, CancellationToken ct)
     {
         if (me.PersonId is not { } personId) return TypedResults.Ok(new MyTasksDto([], 0));
+        // Draft events are invisible without Events.Manage, here exactly as on every other task path: their cards
+        // (and their names) are left out rather than leaked through the sidebar.
+        var drafts = await EventViews.CanManageAsync(http, auth)
+            ? []
+            : await db.Events.AsNoTracking().Where(e => e.Status == Htn.Domain.Events.EventStatus.Draft)
+                .Select(e => e.Id).ToListAsync(ct);
         var tasks = await db.Tasks.AsNoTracking()
-            .Where(t => !t.IsArchived && t.Status != TaskBoardStatus.Done
+            .Where(t => !t.IsArchived && t.Status != TaskBoardStatus.Done && !drafts.Contains(t.EventId)
                         && db.TaskAssignees.Any(a => a.TaskId == t.Id && a.PersonId == personId))
             .ToListAsync(ct);
         // Soonest due first, undated last (frame 07's "My tasks" page).
@@ -145,7 +165,7 @@ public static class TasksEndpoints
         await tx.CommitAsync(ct);
 
         return TypedResults.Created($"/api/tasks/{task.Id}",
-            await TaskViews.DetailAsync(db, task, await TaskViews.FlagsAsync(auth, http, task), me.Id,
+            await TaskViews.DetailAsync(db, task, await TaskViews.FlagsAsync(auth, http, db, task, me, ct), me.Id,
                 http.User.IsInRole(Roles.Board), now, ct));
     }
 }
@@ -166,4 +186,14 @@ internal static class TaskProblems
 
     public static IResult NoLead() =>
         Conflict("Give the task a Lead before approving it.", TaskErrorCodes.NoLead);
+
+    /// <summary>
+    /// Self-approval is not allowed: the only Lead on the card can't be the one who finishes it (user decision).
+    /// Any other lead of that committee, or any board member, can.
+    /// </summary>
+    public static IResult NeedsOtherApprover() =>
+        Conflict("Another committee lead or a board member has to approve this.", TaskErrorCodes.NeedsOtherApprover);
+
+    public static IResult ReopenFirst() =>
+        Conflict("This task still has live points awards. Reopen it first.", TaskErrorCodes.ReopenFirst);
 }

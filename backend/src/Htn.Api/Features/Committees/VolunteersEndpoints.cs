@@ -5,6 +5,7 @@ using Htn.Infrastructure.Audit;
 using Htn.Infrastructure.Data;
 using Htn.Infrastructure.Identity;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace Htn.Api.Features.Committees;
@@ -25,10 +26,12 @@ public static class VolunteersEndpoints
     public static RouteGroupBuilder MapEventVolunteers(this IEndpointRouteBuilder app)
     {
         var g = app.MapGroup("/api/events/{eventId:guid}/volunteers").WithTags("Committees");
-        g.MapPost("/", Create).RequireAuthorization(Policies.CommitteesManageMembers).Validate<VolunteerRequest>();
-        g.MapPut("/{volunteerId:guid}", Update).RequireAuthorization(Policies.CommitteesManageMembers).Validate<VolunteerRequest>();
+        g.MapPost("/", Create).RequireAuthorization(Policies.CommitteesManageMembers)
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<VolunteerRequest>();
+        g.MapPut("/{volunteerId:guid}", Update).RequireAuthorization(Policies.CommitteesManageMembers)
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<VolunteerRequest>();
         g.MapPost("/{volunteerId:guid}/deactivate", Deactivate).RequireAuthorization(Policies.CommitteesManageMembers)
-            .Validate<CommitteeReasonRequest>();
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<CommitteeReasonRequest>();
         return g;
     }
 
@@ -36,10 +39,12 @@ public static class VolunteersEndpoints
         Guid eventId, VolunteerRequest req, HttpContext http, IAuthorizationService auth, HtnDbContext db, IAuditLog audit,
         ICurrentUser me, TimeProvider clock, CancellationToken ct)
     {
+        // Authorization first, before any lookup can answer: a goon who leads nothing must not be able to tell a
+        // missing event or committee (404) from one they simply may not touch (403).
+        if (await DenyAsync(http, auth, req.CommitteeId) is { } denied) return denied;
         if (!await db.Events.AnyAsync(e => e.Id == eventId, ct)) return TypedResults.NotFound();
         var target = await TargetAsync(db, eventId, req.CommitteeId, ct);
         if (target is TargetMissing) return TypedResults.NotFound();
-        if (await DenyAsync(http, auth, req.CommitteeId) is { } denied) return denied;
         if (target is TargetInactive) return CommitteesEndpoints.Conflict("This committee is deactivated.", CommitteeErrorCodes.CommitteeInactive);
 
         var volunteer = EventVolunteer.Create(eventId, req.Name, req.Email, req.Mobile, clock.GetUtcNow());

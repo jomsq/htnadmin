@@ -159,6 +159,38 @@ public sealed class VolunteersEndpointsTests(HtnApiFactory factory) : IClassFixt
     }
 
     [Fact]
+    public async Task Creating_a_volunteer_is_denied_before_anything_can_reveal_what_exists()
+    {
+        var board = await factory.SignedInAsync(PersonLevel.Board);
+        var eventId = await OnSaleAsync(board);
+        var mine = await AddCommitteeAsync(board, eventId, "Logistics");
+        var theirs = await AddCommitteeAsync(board, eventId, "Programs");
+        var (lead, leadClient) = await SignedInUserAsync(factory, PersonLevel.Goon);
+        await SetLeadAsync(board, eventId, mine, lead.PersonId);
+
+        // A committee the lead doesn't run, one that doesn't exist, and an event that doesn't exist: all 403, so the
+        // answer never says which of them is real.
+        foreach (var body in new[]
+                 {
+                     Volunteer("Ria Chua", committeeId: theirs),
+                     Volunteer("Ria Chua", committeeId: Guid.CreateVersion7()),
+                     Volunteer("Ria Chua"),
+                 })
+            Assert.Equal(HttpStatusCode.Forbidden,
+                (await leadClient.PostAsync($"/api/events/{eventId}/volunteers", body)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await leadClient.PostAsync($"/api/events/{Guid.CreateVersion7()}/volunteers",
+                Volunteer("Ria Chua", committeeId: theirs))).StatusCode);
+
+        // Her own committee still works, and the board still gets the honest 404 for a missing committee.
+        Assert.Equal(HttpStatusCode.Created,
+            (await leadClient.PostAsync($"/api/events/{eventId}/volunteers", Volunteer("Ria Chua", committeeId: mine))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await board.PostAsync($"/api/events/{eventId}/volunteers",
+                Volunteer("Ray Cruz", committeeId: Guid.CreateVersion7()))).StatusCode);
+    }
+
+    [Fact]
     public async Task Attaching_fails_for_unknown_rows_and_deactivated_targets()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);

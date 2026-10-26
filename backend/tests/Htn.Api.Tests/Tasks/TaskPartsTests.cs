@@ -178,6 +178,31 @@ public sealed class TaskPartsTests(HtnApiFactory factory) : IClassFixture<HtnApi
     }
 
     [Fact]
+    public async Task A_mention_email_is_dropped_when_the_recipient_has_left_the_committee()
+    {
+        var s = await SceneAsync(factory);
+        var id = await CreateTaskAsync(s.Board, s.EventId, s.Committee);
+        var posted = await s.LeadClient.PostAsync($"/api/tasks/{id}/comments", new
+        {
+            body = "Can you check the desk plan?",
+            mentionPersonIds = new[] { s.Worker.PersonId },
+        });
+        Assert.Equal(HttpStatusCode.Created, posted.StatusCode);
+        // It was queued for her: she was on the committee when the comment was written.
+        var queued = await factory.DbAsync(db => db.Outbox.AsNoTracking()
+            .Where(m => m.Type == EmailTypes.TaskMention).Select(m => m.PayloadJson).ToListAsync());
+        Assert.Contains(queued, p => p.Contains(id.ToString(), StringComparison.OrdinalIgnoreCase)
+                                     && p.Contains(s.Worker.PersonId.ToString(), StringComparison.OrdinalIgnoreCase));
+
+        // She leaves the committee before the outbox runs: the scope is checked again at send time, so no email.
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await s.Board.DeleteAsync($"/api/events/{s.EventId}/committees/{s.Committee}/members/{s.Worker.PersonId}")).StatusCode);
+        var before = factory.Emails.Sent.Count(m => m.To == s.Worker.Email);
+        await factory.ProcessOutboxAsync();
+        Assert.Equal(before, factory.Emails.Sent.Count(m => m.To == s.Worker.Email));
+    }
+
+    [Fact]
     public async Task Only_the_author_edits_a_comment_and_deleting_is_soft_with_a_reason()
     {
         var s = await SceneAsync(factory);

@@ -10,6 +10,7 @@ using Htn.Infrastructure.Data;
 using Htn.Infrastructure.Identity;
 using Htn.Infrastructure.Storage;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Net.Http.Headers;
 using static Htn.Api.Features.Tasks.TaskDetailEndpoints;
@@ -31,25 +32,34 @@ public static class TaskPartsEndpoints
     {
         var g = app.MapGroup("/api/tasks/{taskId:guid}").WithTags("Tasks");
 
-        g.MapPost("/assignees", AddAssignee).RequireAuthorization(Policies.TasksManage).Validate<AddAssigneeRequest>();
-        g.MapDelete("/assignees/{assigneeId:guid}", RemoveAssignee).RequireAuthorization(Policies.TasksManage);
+        // Every mutating route is metered per signed-in user (see TaskRateLimiting); the download is not.
+        g.MapPost("/assignees", AddAssignee).RequireAuthorization(Policies.TasksManage)
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<AddAssigneeRequest>();
+        g.MapDelete("/assignees/{assigneeId:guid}", RemoveAssignee).RequireAuthorization(Policies.TasksManage)
+            .RequireRateLimiting(TaskRateLimiting.Write);
 
-        g.MapPost("/checklist", AddChecklistItem).RequireAuthorization(Policies.TasksWork).Validate<ChecklistItemRequest>();
+        g.MapPost("/checklist", AddChecklistItem).RequireAuthorization(Policies.TasksWork)
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<ChecklistItemRequest>();
         g.MapPut("/checklist/{itemId:guid}", UpdateChecklistItem).RequireAuthorization(Policies.TasksWork)
-            .Validate<UpdateChecklistItemRequest>();
-        g.MapDelete("/checklist/{itemId:guid}", RemoveChecklistItem).RequireAuthorization(Policies.TasksWork);
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<UpdateChecklistItemRequest>();
+        g.MapDelete("/checklist/{itemId:guid}", RemoveChecklistItem).RequireAuthorization(Policies.TasksWork)
+            .RequireRateLimiting(TaskRateLimiting.Write);
         g.MapPost("/checklist/reorder", ReorderChecklist).RequireAuthorization(Policies.TasksWork)
-            .Validate<ReorderChecklistRequest>();
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<ReorderChecklistRequest>();
 
-        g.MapPost("/comments", AddComment).RequireAuthorization(Policies.TasksWork).Validate<CreateCommentRequest>();
-        g.MapPut("/comments/{commentId:guid}", EditComment).RequireAuthorization(Policies.TasksWork).Validate<UpdateCommentRequest>();
+        g.MapPost("/comments", AddComment).RequireAuthorization(Policies.TasksWork)
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<CreateCommentRequest>();
+        g.MapPut("/comments/{commentId:guid}", EditComment).RequireAuthorization(Policies.TasksWork)
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<UpdateCommentRequest>();
         g.MapDelete("/comments/{commentId:guid}", DeleteComment).RequireAuthorization(Policies.TasksWork)
-            .Validate<TaskReasonRequest>();
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<TaskReasonRequest>();
 
-        g.MapPost("/attachments", UploadAttachment).RequireAuthorization(Policies.TasksWork);
+        g.MapPost("/attachments", UploadAttachment).RequireAuthorization(Policies.TasksWork)
+            .RequireRateLimiting(TaskRateLimiting.Write);
         // Board viewers may download; the file is always a download, never rendered in the browser.
         g.MapGet("/attachments/{attachmentId:guid}", DownloadAttachment).RequireAuthorization(Policies.TasksViewBoard);
-        g.MapPost("/attachments/{attachmentId:guid}/remove", RemoveAttachment).RequireAuthorization(Policies.TasksWork);
+        g.MapPost("/attachments/{attachmentId:guid}/remove", RemoveAttachment).RequireAuthorization(Policies.TasksWork)
+            .RequireRateLimiting(TaskRateLimiting.Write);
         return g;
     }
 
@@ -57,11 +67,18 @@ public static class TaskPartsEndpoints
 
     private static async Task<IResult> AddAssignee(
         Guid taskId, AddAssigneeRequest req, HttpContext http, IAuthorizationService auth, HtnDbContext db, IAuditLog audit,
-        ICurrentUser me, TimeProvider clock, CancellationToken ct)
+        ITaskScopeResolver scopes, ICurrentUser me, TimeProvider clock, CancellationToken ct)
     {
         var (task, error) = await LoadAsync(taskId, Policies.TasksManage, http, auth, db, ct);
         if (error is not null) return error;
-        if (task!.IsArchived) return TaskProblems.Archived();
+        // Who is on the card decides who earns points, so it is written exactly like the approve path: one
+        // transaction, the task row locked, the row re-read. An approve landing at the same moment therefore either
+        // happens before this (and this gets 409 task_done) or after it (and the new assignee is awarded) — the
+        // award is never silently dropped. The task_assignees_frozen trigger is the backstop underneath.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await TaskOps.LockAsync(db, task!.Id, ct);
+        await db.Entry(task).ReloadAsync(ct);
+        if (task.IsArchived) return TaskProblems.Archived();
         if (task.Status == TaskBoardStatus.Done) return TaskProblems.Done();
 
         var now = clock.GetUtcNow();
@@ -100,16 +117,24 @@ public static class TaskPartsEndpoints
         audit.Record(me.Id, "task.assignee_add", nameof(TaskAssignee), assignee.Id.ToString(),
             after: new { assignee.TaskId, assignee.PersonId, assignee.VolunteerId, Role = role.ToString() });
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        // The caller may have just put themselves (or someone else) on the card: the cached scope answer, and with it
+        // canWork / canApprove, has to be recomputed.
+        scopes.Invalidate(task.Id);
         return await OkDetailAsync(db, auth, http, task, me, now, ct);
     }
 
     private static async Task<IResult> RemoveAssignee(
         Guid taskId, Guid assigneeId, HttpContext http, IAuthorizationService auth, HtnDbContext db, IAuditLog audit,
-        ICurrentUser me, TimeProvider clock, CancellationToken ct)
+        ITaskScopeResolver scopes, ICurrentUser me, TimeProvider clock, CancellationToken ct)
     {
         var (task, error) = await LoadAsync(taskId, Policies.TasksManage, http, auth, db, ct);
         if (error is not null) return error;
-        if (task!.IsArchived) return TaskProblems.Archived();
+        // Same shape as AddAssignee and the approve path: lock the task, re-read it, then change who earns points.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await TaskOps.LockAsync(db, task!.Id, ct);
+        await db.Entry(task).ReloadAsync(ct);
+        if (task.IsArchived) return TaskProblems.Archived();
         if (task.Status == TaskBoardStatus.Done) return TaskProblems.Done();
 
         var assignee = await db.TaskAssignees.SingleOrDefaultAsync(a => a.Id == assigneeId && a.TaskId == task.Id, ct);
@@ -124,6 +149,8 @@ public static class TaskPartsEndpoints
         audit.Record(me.Id, "task.assignee_remove", nameof(TaskAssignee), assignee.Id.ToString(),
             new { assignee.TaskId, assignee.PersonId, assignee.VolunteerId, Role = assignee.Role.ToString() });
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        scopes.Invalidate(task.Id);
         return await OkDetailAsync(db, auth, http, task, me, now, ct);
     }
 
@@ -204,7 +231,7 @@ public static class TaskPartsEndpoints
 
     private static async Task<IResult> AddComment(
         Guid taskId, CreateCommentRequest req, HttpContext http, IAuthorizationService auth, HtnDbContext db, IAuditLog audit,
-        ICurrentUser me, TimeProvider clock, CancellationToken ct)
+        MentionEmailLimiter mentionLimiter, ICurrentUser me, TimeProvider clock, CancellationToken ct)
     {
         // Commenting stays open on a finished task: only its points and assignees freeze.
         var (task, error) = await LoadAsync(taskId, Policies.TasksWork, http, auth, db, ct);
@@ -213,18 +240,26 @@ public static class TaskPartsEndpoints
         if (me.Id is not { } authorId) return TypedResults.Unauthorized();
 
         var now = clock.GetUtcNow();
-        var comment = TaskComment.Create(task.Id, authorId, req.Body, req.MentionPersonIds, now);
+        // A mention has to name a real person: anything else is a typo or a probe, and it would show as "Unknown".
+        var mentions = (req.MentionPersonIds ?? []).Where(id => id != Guid.Empty).Distinct().ToList();
+        if (mentions.Count > 0)
+        {
+            var known = await db.People.AsNoTracking().Where(p => mentions.Contains(p.Id)).CountAsync(ct);
+            if (known != mentions.Count) return Problems.Field("mentionPersonIds", "Choose people from the list.");
+        }
+        var comment = TaskComment.Create(task.Id, authorId, req.Body, mentions, now);
         db.TaskComments.Add(comment);
         TaskOps.Log(db, task.Id, me.Id, TaskActivityKinds.CommentAdded, "commented on this task", now);
-        // Mention emails go only to people who can see this board; the rest are dropped without a word.
-        var queued = await TaskMentions.QueueAsync(db, task.EventId, comment.Id, task.Id, comment.MentionedPersonIds,
-            me.PersonId, now, ct);
-        if (queued.Count > 0)
+        // Mention emails go only to people who can see this board, and only within the author's hourly budget; the
+        // rest are dropped without a word (the response never says who was mailed).
+        var (queued, dropped) = await TaskMentions.QueueAsync(db, mentionLimiter, task.EventId, comment.Id, task.Id,
+            comment.MentionedPersonIds, me.PersonId, authorId, now, ct);
+        if (queued.Count > 0 || dropped > 0)
             audit.Record(me.Id, "task.mentions_notified", nameof(TaskComment), comment.Id.ToString(),
-                after: new { taskId = task.Id, personIds = queued });
+                after: new { taskId = task.Id, personIds = queued, rateLimited = dropped });
         await db.SaveChangesAsync(ct);
         return TypedResults.Created($"/api/tasks/{task.Id}",
-            await TaskViews.DetailAsync(db, task, await TaskViews.FlagsAsync(auth, http, task), me.Id,
+            await TaskViews.DetailAsync(db, task, await TaskViews.FlagsAsync(auth, http, db, task, me, ct), me.Id,
                 http.User.IsInRole(Roles.Board), now, ct));
     }
 
@@ -238,7 +273,7 @@ public static class TaskPartsEndpoints
         var comment = await db.TaskComments.SingleOrDefaultAsync(c => c.Id == commentId && c.TaskId == task.Id, ct);
         if (comment is null) return TypedResults.NotFound();
         // Only the author rewrites their own words.
-        if (comment.AuthorId != me.Id) return TaskProblems.Conflict("Only the author can edit this comment.", TaskErrorCodes.NotAuthor);
+        if (comment.AuthorUserId != me.Id) return TaskProblems.Conflict("Only the author can edit this comment.", TaskErrorCodes.NotAuthor);
 
         var now = clock.GetUtcNow();
         if (comment.Edit(req.Body, now))
@@ -255,7 +290,7 @@ public static class TaskPartsEndpoints
         if (error is not null) return error;
         var comment = await db.TaskComments.SingleOrDefaultAsync(c => c.Id == commentId && c.TaskId == task!.Id, ct);
         if (comment is null) return TypedResults.NotFound();
-        if (comment.AuthorId != me.Id && !http.User.IsInRole(Roles.Board))
+        if (comment.AuthorUserId != me.Id && !http.User.IsInRole(Roles.Board))
             return TaskProblems.Conflict("Only the author or the board can delete this comment.", TaskErrorCodes.NotAuthor);
 
         var now = clock.GetUtcNow();
@@ -264,7 +299,7 @@ public static class TaskPartsEndpoints
         comment.Delete(reason, now, me.Id);
         TaskOps.Log(db, task!.Id, me.Id, TaskActivityKinds.CommentDeleted, "deleted a comment", now);
         audit.Record(me.Id, "task.comment_delete", nameof(TaskComment), comment.Id.ToString(),
-            new { comment.TaskId, comment.AuthorId }, new { comment.DeletedAt }, reason);
+            new { comment.TaskId, comment.AuthorUserId }, new { comment.DeletedAt }, reason);
         await db.SaveChangesAsync(ct);
         return await OkDetailAsync(db, auth, http, task, me, now, ct);
     }
@@ -284,7 +319,9 @@ public static class TaskPartsEndpoints
         // Trust the bytes, never the declared type or the file name: PNG, JPG or PDF only.
         if (FileSignatures.DetectAttachment(file!.Bytes) is not { } detected)
             return Problems.Field("file", "Upload a PNG, JPG or PDF.", TaskErrorCodes.UnsupportedType);
-        if (await db.TaskAttachments.CountAsync(a => a.TaskId == task!.Id && a.RemovedAt == null, ct) >= TaskAttachment.MaxPerTask)
+        // Every attachment ever uploaded to this task counts, removed ones included: the bytes are kept for ever, so
+        // an upload → remove loop must not be a way to write unlimited 5 MB blobs.
+        if (await db.TaskAttachments.CountAsync(a => a.TaskId == task!.Id, ct) >= TaskAttachment.MaxPerTask)
             return TaskProblems.Conflict($"A task can hold at most {TaskAttachment.MaxPerTask} attachments.",
                 TaskErrorCodes.TooManyAttachments);
 

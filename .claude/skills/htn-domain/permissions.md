@@ -46,7 +46,7 @@ Volunteers have no login: they are per-event records managed by the board or the
 | `Events.Manage` (event, tickets, vouchers, settings) | ✓ | — | — | — |
 | `Events.View` (events list and details; Drafts and vouchers only with `Events.Manage`) | ✓ | ✓ | ✓ | ✓ |
 | `Committees.ManageMembers` (add/remove members and volunteers; create/rename/deactivate a committee and set its lead are board-only) | ✓ | own committee | — | — |
-| `Tasks.Manage` (create, assign, set points, approve to Done) | ✓ | own committee | — | — |
+| `Tasks.Manage` (create, assign, set points, approve to Done) | ✓ | own committee, but never the card they are the sole `Lead` of | — | — |
 | `Tasks.Work` (move own cards, comment, checklist) | ✓ | ✓ | own tasks | own tasks |
 | `Tasks.ViewBoard` | ✓ | ✓ | events they're on | events they're on |
 | `Leaderboard.View` (leaderboard and "My tasks": organization-wide sidebar screens, not event-scoped) | ✓ | ✓ | ✓ | ✓ |
@@ -70,6 +70,12 @@ Volunteers have no login: they are per-event records managed by the board or the
 | `Settings.Personal` (own mode / text size / density) | ✓ | ✓ | ✓ | ✓ |
 
 ## Rules
+- **Self-approval is refused**, whoever you are: when the approver is the only `Lead` assignee on a task, approving it
+  into Done (or moving it there, with or without `RequireTaskApproval`) returns 409 `needs_other_approver`. The task
+  detail carries `needsOtherApprover: true` so the UI can explain the disabled Approve button. Any other lead of that
+  committee, and every board member, can approve, so a card is never stuck.
+- **Mutating task and committee routes are rate-limited** per signed-in user (`tasks-write`), and @mention emails are
+  metered per author per hour; the overflow is dropped silently and counted in the audit entry.
 - Denials return 403. Integration tests must check at least one denied role for every endpoint group.
 - Finance endpoints also return 404 to non-board users, so the module's existence isn't revealed.
 - Prices, TIN and bank fields are removed from responses for non-board users. Do this at the DTO projection, not in the UI.

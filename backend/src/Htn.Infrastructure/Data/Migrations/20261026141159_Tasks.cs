@@ -391,13 +391,15 @@ namespace Htn.Infrastructure.Data.Migrations
             // are soft-removed, and an award is reversed.
             migrationBuilder.Sql("""
                 -- The activity log is append-only, exactly like person_history and audit_entries.
+                DROP TRIGGER IF EXISTS task_activities_append_only ON task_activities;
                 CREATE TRIGGER task_activities_append_only BEFORE UPDATE OR DELETE ON task_activities
                     FOR EACH ROW EXECUTE FUNCTION htn_reject_change();
+                DROP TRIGGER IF EXISTS task_activities_no_truncate ON task_activities;
                 CREATE TRIGGER task_activities_no_truncate BEFORE TRUNCATE ON task_activities
                     FOR EACH STATEMENT EXECUTE FUNCTION htn_reject_change();
 
                 -- Points are append-only like finance: only the three reversal columns may ever change, once.
-                CREATE FUNCTION htn_points_awards_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+                CREATE OR REPLACE FUNCTION htn_points_awards_guard() RETURNS trigger LANGUAGE plpgsql AS $$
                 BEGIN
                     IF TG_OP = 'DELETE' THEN
                         RAISE EXCEPTION 'points awards are reversed with a reason, never deleted' USING ERRCODE = 'insufficient_privilege';
@@ -415,13 +417,15 @@ namespace Htn.Infrastructure.Data.Migrations
                     RETURN NEW;
                 END;
                 $$;
+                DROP TRIGGER IF EXISTS points_awards_guard ON points_awards;
                 CREATE TRIGGER points_awards_guard BEFORE UPDATE OR DELETE ON points_awards
                     FOR EACH ROW EXECUTE FUNCTION htn_points_awards_guard();
+                DROP TRIGGER IF EXISTS points_awards_no_truncate ON points_awards;
                 CREATE TRIGGER points_awards_no_truncate BEFORE TRUNCATE ON points_awards
                     FOR EACH STATEMENT EXECUTE FUNCTION htn_reject_change();
 
                 -- A task keeps its identity, its event and its reference number for ever.
-                CREATE FUNCTION htn_tasks_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+                CREATE OR REPLACE FUNCTION htn_tasks_guard() RETURNS trigger LANGUAGE plpgsql AS $$
                 BEGIN
                     IF TG_OP = 'DELETE' THEN
                         RAISE EXCEPTION 'tasks are archived with a reason, never deleted' USING ERRCODE = 'insufficient_privilege';
@@ -433,13 +437,15 @@ namespace Htn.Infrastructure.Data.Migrations
                     RETURN NEW;
                 END;
                 $$;
+                DROP TRIGGER IF EXISTS tasks_guard ON tasks;
                 CREATE TRIGGER tasks_guard BEFORE UPDATE OR DELETE ON tasks
                     FOR EACH ROW EXECUTE FUNCTION htn_tasks_guard();
+                DROP TRIGGER IF EXISTS tasks_no_truncate ON tasks;
                 CREATE TRIGGER tasks_no_truncate BEFORE TRUNCATE ON tasks
                     FOR EACH STATEMENT EXECUTE FUNCTION htn_reject_change();
 
                 -- Comments: the author, the task and the body of a deleted comment stand; deleting is a stamp + reason.
-                CREATE FUNCTION htn_task_comments_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+                CREATE OR REPLACE FUNCTION htn_task_comments_guard() RETURNS trigger LANGUAGE plpgsql AS $$
                 BEGIN
                     IF TG_OP = 'DELETE' THEN
                         RAISE EXCEPTION 'comments are deleted with a reason (soft), never removed' USING ERRCODE = 'insufficient_privilege';
@@ -455,12 +461,14 @@ namespace Htn.Infrastructure.Data.Migrations
                     RETURN NEW;
                 END;
                 $$;
+                DROP TRIGGER IF EXISTS task_comments_guard ON task_comments;
                 CREATE TRIGGER task_comments_guard BEFORE UPDATE OR DELETE ON task_comments
                     FOR EACH ROW EXECUTE FUNCTION htn_task_comments_guard();
+                DROP TRIGGER IF EXISTS task_comments_no_truncate ON task_comments;
                 CREATE TRIGGER task_comments_no_truncate BEFORE TRUNCATE ON task_comments
                     FOR EACH STATEMENT EXECUTE FUNCTION htn_reject_change();
 
-                CREATE FUNCTION htn_task_attachments_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+                CREATE OR REPLACE FUNCTION htn_task_attachments_guard() RETURNS trigger LANGUAGE plpgsql AS $$
                 BEGIN
                     IF TG_OP = 'DELETE' THEN
                         RAISE EXCEPTION 'attachments are removed with a timestamp, never deleted' USING ERRCODE = 'insufficient_privilege';
@@ -472,8 +480,10 @@ namespace Htn.Infrastructure.Data.Migrations
                     RETURN NEW;
                 END;
                 $$;
+                DROP TRIGGER IF EXISTS task_attachments_guard ON task_attachments;
                 CREATE TRIGGER task_attachments_guard BEFORE UPDATE OR DELETE ON task_attachments
                     FOR EACH ROW EXECUTE FUNCTION htn_task_attachments_guard();
+                DROP TRIGGER IF EXISTS task_attachments_no_truncate ON task_attachments;
                 CREATE TRIGGER task_attachments_no_truncate BEFORE TRUNCATE ON task_attachments
                     FOR EACH STATEMENT EXECUTE FUNCTION htn_reject_change();
 

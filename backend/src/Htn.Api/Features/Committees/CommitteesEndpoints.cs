@@ -7,6 +7,7 @@ using Htn.Infrastructure.Audit;
 using Htn.Infrastructure.Data;
 using Htn.Infrastructure.Identity;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace Htn.Api.Features.Committees;
@@ -34,22 +35,29 @@ public static class CommitteesEndpoints
     {
         var g = app.MapGroup("/api/events/{eventId:guid}/committees").WithTags("Committees");
         g.MapGet("/", List).RequireAuthorization(Policies.EventsView);
+        // Every mutating route is metered per signed-in user (see TaskRateLimiting).
         g.MapPost("/", Create).RequireAuthorization(Policies.CommitteesManageMembers).RequireAuthorization(Policies.BoardOnly)
-            .Validate<CommitteeRequest>();
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<CommitteeRequest>();
         g.MapPut("/{committeeId:guid}", Update).RequireAuthorization(Policies.CommitteesManageMembers)
-            .RequireAuthorization(Policies.BoardOnly).Validate<CommitteeRequest>();
+            .RequireAuthorization(Policies.BoardOnly)
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<CommitteeRequest>();
         g.MapPost("/{committeeId:guid}/deactivate", Deactivate).RequireAuthorization(Policies.CommitteesManageMembers)
-            .RequireAuthorization(Policies.BoardOnly).Validate<CommitteeReasonRequest>();
+            .RequireAuthorization(Policies.BoardOnly)
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<CommitteeReasonRequest>();
         g.MapPut("/{committeeId:guid}/lead", SetLead).RequireAuthorization(Policies.CommitteesManageMembers)
-            .RequireAuthorization(Policies.BoardOnly).Validate<CommitteeLeadRequest>();
+            .RequireAuthorization(Policies.BoardOnly)
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<CommitteeLeadRequest>();
         g.MapPost("/{committeeId:guid}/members", AddMember).RequireAuthorization(Policies.CommitteesManageMembers)
-            .Validate<CommitteeMemberRequest>();
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<CommitteeMemberRequest>();
         g.MapDelete("/{committeeId:guid}/members/{personId:guid}", RemoveMember)
-            .RequireAuthorization(Policies.CommitteesManageMembers);
+            .RequireAuthorization(Policies.CommitteesManageMembers)
+            .RequireRateLimiting(TaskRateLimiting.Write);
         g.MapPost("/{committeeId:guid}/volunteers/{volunteerId:guid}", AttachVolunteer)
-            .RequireAuthorization(Policies.CommitteesManageMembers);
+            .RequireAuthorization(Policies.CommitteesManageMembers)
+            .RequireRateLimiting(TaskRateLimiting.Write);
         g.MapDelete("/{committeeId:guid}/volunteers/{volunteerId:guid}", DetachVolunteer)
-            .RequireAuthorization(Policies.CommitteesManageMembers);
+            .RequireAuthorization(Policies.CommitteesManageMembers)
+            .RequireRateLimiting(TaskRateLimiting.Write);
         return g;
     }
 

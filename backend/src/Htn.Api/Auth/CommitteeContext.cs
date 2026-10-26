@@ -46,7 +46,10 @@ public sealed class CommitteeContext(HtnDbContext db, ICurrentUser me) : ICommit
     private Task<IReadOnlyList<CommitteeMembership>>? _memberships;
 
     public Task<IReadOnlyList<CommitteeMembership>> MembershipsAsync(CancellationToken ct = default) =>
-        _memberships ??= LoadAsync(ct);
+        // The load is memoized and awaited by every later caller in the request, so it must not hang on the first
+        // caller's cancellation token: one abandoned sub-request would otherwise fault every authorization check
+        // that follows. The request's own lifetime already ends the query (the connection is closed with the scope).
+        _memberships ??= LoadAsync(CancellationToken.None);
 
     private async Task<IReadOnlyList<CommitteeMembership>> LoadAsync(CancellationToken ct)
     {

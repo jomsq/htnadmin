@@ -7,6 +7,7 @@ using Htn.Infrastructure.Audit;
 using Htn.Infrastructure.Data;
 using Htn.Infrastructure.Identity;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace Htn.Api.Features.Tasks;
@@ -27,12 +28,17 @@ public static class TaskDetailEndpoints
     {
         var g = app.MapGroup("/api/tasks/{taskId:guid}").WithTags("Tasks");
         g.MapGet("/", Detail).RequireAuthorization(Policies.TasksViewBoard);
-        g.MapPut("/", Update).RequireAuthorization(Policies.TasksManage).Validate<UpdateTaskRequest>();
-        g.MapPost("/move", Move).RequireAuthorization(Policies.TasksWork).Validate<MoveTaskRequest>();
-        g.MapPost("/approve", Approve).RequireAuthorization(Policies.TasksManage);
-        g.MapPost("/reopen", Reopen).RequireAuthorization(Policies.TasksManage).Validate<ReopenTaskRequest>();
-        g.MapPost("/archive", Archive).RequireAuthorization(Policies.TasksManage).Validate<TaskReasonRequest>();
-        g.MapPost("/restore", Restore).RequireAuthorization(Policies.TasksManage);
+        // Every mutating route is metered per signed-in user (see TaskRateLimiting).
+        g.MapPut("/", Update).RequireAuthorization(Policies.TasksManage)
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<UpdateTaskRequest>();
+        g.MapPost("/move", Move).RequireAuthorization(Policies.TasksWork)
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<MoveTaskRequest>();
+        g.MapPost("/approve", Approve).RequireAuthorization(Policies.TasksManage).RequireRateLimiting(TaskRateLimiting.Write);
+        g.MapPost("/reopen", Reopen).RequireAuthorization(Policies.TasksManage)
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<ReopenTaskRequest>();
+        g.MapPost("/archive", Archive).RequireAuthorization(Policies.TasksManage)
+            .RequireRateLimiting(TaskRateLimiting.Write).Validate<TaskReasonRequest>();
+        g.MapPost("/restore", Restore).RequireAuthorization(Policies.TasksManage).RequireRateLimiting(TaskRateLimiting.Write);
         return g;
     }
 
@@ -55,7 +61,7 @@ public static class TaskDetailEndpoints
     internal static async Task<IResult> OkDetailAsync(
         HtnDbContext db, IAuthorizationService auth, HttpContext http, TaskItem task, ICurrentUser me, DateTimeOffset now,
         CancellationToken ct) =>
-        TypedResults.Ok(await TaskViews.DetailAsync(db, task, await TaskViews.FlagsAsync(auth, http, task), me.Id,
+        TypedResults.Ok(await TaskViews.DetailAsync(db, task, await TaskViews.FlagsAsync(auth, http, db, task, me, ct), me.Id,
             http.User.IsInRole(Roles.Board), now, ct));
 
     // ---------- Read ----------
@@ -73,7 +79,7 @@ public static class TaskDetailEndpoints
 
     private static async Task<IResult> Update(
         Guid taskId, UpdateTaskRequest req, HttpContext http, IAuthorizationService auth, HtnDbContext db, IAuditLog audit,
-        ICurrentUser me, TimeProvider clock, CancellationToken ct)
+        ITaskScopeResolver scopes, ICurrentUser me, TimeProvider clock, CancellationToken ct)
     {
         var (task, error) = await LoadAsync(taskId, Policies.TasksManage, http, auth, db, ct);
         if (error is not null) return error;
@@ -93,6 +99,9 @@ public static class TaskDetailEndpoints
             // Handing a card to another committee needs the right on that committee too.
             if (await auth.DenyAsync(http, new CommitteeScope(committeeId), Policies.TasksManage) is { } denied) return denied;
             task.MoveToCommittee(committeeId, now, me.Id);
+            // The task now belongs to another committee, so the per-request answer cached for this task is stale:
+            // without this the canEdit / canWork flags in the response would still describe the old committee.
+            scopes.Invalidate(task.Id);
             changes.Add($"moved it to {target.Name}");
         }
         if (req.BasePoints is { } points && points != task.BasePoints)
@@ -180,7 +189,11 @@ public static class TaskDetailEndpoints
             return await OkDetailAsync(db, auth, http, task, me, now, ct);
         }
         // Points go to a Lead, a Collab and an Assistant; a card with nobody leading it isn't finished.
-        if (!await TaskOps.HasLeadAsync(db, task.Id, ct)) return TaskProblems.NoLead();
+        var leads = await TaskOps.LeadPersonIdsAsync(db, task.Id, ct);
+        if (leads.Count == 0) return TaskProblems.NoLead();
+        // Nobody signs off their own work: the only Lead on the card can't be the one who finishes it. Reading the
+        // leads under the task row lock is what makes this safe against an assignee change landing at the same time.
+        if (TaskOps.IsSoleLead(leads, me.PersonId)) return TaskProblems.NeedsOtherApprover();
 
         var settings = await db.OrgSettings.AsNoTracking().SingleAsync(s => s.Id == OrgSettings.SingletonId, ct);
         var before = TaskOps.Audit(task);
@@ -240,11 +253,13 @@ public static class TaskDetailEndpoints
         var (task, error) = await LoadAsync(taskId, Policies.TasksManage, http, auth, db, ct);
         if (error is not null) return error;
         if (task!.IsArchived) return TaskProblems.Archived();
+        // Archiving a card that still holds live awards would hide the points it handed out: reopen it first.
+        if (await TaskOps.HasLiveAwardsAsync(db, task.Id, ct)) return TaskProblems.ReopenFirst();
 
         var now = clock.GetUtcNow();
         var reason = req.Reason.Trim();
         var before = TaskOps.Audit(task);
-        task.Archive(reason, now, me.Id);
+        task.Archive(reason, hasLiveAwards: false, now, me.Id);
         TaskOps.Log(db, task.Id, me.Id, TaskActivityKinds.Archived, "archived it", now);
         audit.Record(me.Id, "task.archive", nameof(TaskItem), task.Id.ToString(), before, TaskOps.Audit(task), reason);
         await db.SaveChangesAsync(ct);

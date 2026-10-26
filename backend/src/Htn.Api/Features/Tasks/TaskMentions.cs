@@ -1,3 +1,4 @@
+using Htn.Api.Auth;
 using Htn.Domain.Organization;
 using Htn.Infrastructure.Data;
 using Htn.Infrastructure.Email;
@@ -19,15 +20,16 @@ internal static class TaskMentions
 
     /// <summary>
     /// Queues one <c>email.task_mention</c> message per person who may see the board, inside the caller's unit of work.
-    /// Returns the person ids that were queued (for the audit trail, never for the response).
+    /// Returns the person ids that were queued and how many recipients the author's hourly email budget dropped (both
+    /// for the audit trail, never for the response).
     /// </summary>
-    public static async Task<List<Guid>> QueueAsync(
-        HtnDbContext db, Guid eventId, Guid commentId, Guid taskId, IReadOnlyCollection<Guid> personIds, Guid? authorPersonId,
-        DateTimeOffset at, CancellationToken ct)
+    public static async Task<(List<Guid> Queued, int Dropped)> QueueAsync(
+        HtnDbContext db, MentionEmailLimiter limiter, Guid eventId, Guid commentId, Guid taskId,
+        IReadOnlyCollection<Guid> personIds, Guid? authorPersonId, Guid authorUserId, DateTimeOffset at, CancellationToken ct)
     {
-        if (personIds.Count == 0) return [];
+        if (personIds.Count == 0) return ([], 0);
         var targets = personIds.Where(id => id != authorPersonId).Distinct().ToList(); // nobody is emailed about their own comment
-        if (targets.Count == 0) return [];
+        if (targets.Count == 0) return ([], 0);
 
         var candidates = await (
             from p in db.People.AsNoTracking()
@@ -42,13 +44,21 @@ internal static class TaskMentions
             .Select(m => m.PersonId).ToListAsync(ct);
 
         var queued = new List<Guid>();
+        var dropped = 0;
         foreach (var c in candidates)
         {
             if (c.Level != PersonLevel.Board && !onEvent.Contains(c.Id)) continue; // silently dropped
+            // One comment can name ten people, so the author gets an hourly recipient budget: past it the overflow
+            // is dropped silently (and recorded in the audit entry), exactly like the public checkout email meter.
+            if (!limiter.TryRecipient(authorUserId))
+            {
+                dropped++;
+                continue;
+            }
             db.Outbox.Add(OutboxProcessor.TaskMentionEmail(
                 new TaskMentionEmailPayload(commentId, taskId, c.Id, c.Email, c.FirstName), at));
             queued.Add(c.Id);
         }
-        return queued;
+        return (queued, dropped);
     }
 }

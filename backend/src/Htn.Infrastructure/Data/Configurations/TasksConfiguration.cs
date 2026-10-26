@@ -3,6 +3,7 @@ using Htn.Domain.Events;
 using Htn.Domain.Files;
 using Htn.Domain.Organization;
 using Htn.Domain.Tasks;
+using Htn.Infrastructure.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -27,8 +28,12 @@ internal sealed class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
             // The displayed reference always matches the number it came from.
             t.HasCheckConstraint("ck_tasks_reference", $"reference = '{TaskItem.ReferencePrefix}-' || number::text");
             t.HasCheckConstraint("ck_tasks_sort_order", $"sort_order BETWEEN 0 AND {TaskItem.MaxSortOrder}");
+            // Labels are free text on a text[] column, so they are bounded in every direction: no NULLs, no empty
+            // elements, at most MaxLabels of them and a bounded total length.
             t.HasCheckConstraint("ck_tasks_labels",
-                $"array_position(labels, NULL) IS NULL AND cardinality(labels) <= {TaskItem.MaxLabels}");
+                $"array_position(labels, NULL) IS NULL AND array_position(labels, '') IS NULL "
+                + $"AND cardinality(labels) <= {TaskItem.MaxLabels} "
+                + $"AND char_length(array_to_string(labels, ',')) <= {TaskItem.LabelsTotalMaxLength}");
             // Done is only reached by approving, and reopening clears the stamp again.
             t.HasCheckConstraint("ck_tasks_approved", "(status = 'Done') = (approved_at IS NOT NULL)");
             t.HasCheckConstraint("ck_tasks_archived",
@@ -47,9 +52,18 @@ internal sealed class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
         b.Property<uint>(EventConfiguration.RowVersion).HasColumnName("xmin").HasColumnType("xid").IsRowVersion();
         b.Ignore(t => t.IsOpen);
 
+        // Assignees and awards are keyed by (task_id, event_id), so a child can never cross events.
+        b.HasAlternateKey(t => new { t.Id, t.EventId }).HasName("ak_tasks_id_event_id");
+
         b.HasIndex(t => new { t.EventId, t.Number }).IsUnique().HasDatabaseName(NumberIndex);
         // The board: one event's live cards, column by column, in display order.
         b.HasIndex(t => new { t.EventId, t.Status, t.SortOrder }).HasFilter("NOT is_archived");
+        // The whole board in one scan (every column at once, in display order) — what GET /tasks reads.
+        b.HasIndex(t => new { t.EventId, t.SortOrder, t.CreatedAt }).HasFilter("NOT is_archived");
+        // The board filtered to one committee chip.
+        b.HasIndex(t => new { t.EventId, t.CommitteeId, t.SortOrder }).HasFilter("NOT is_archived");
+        // The archive view (?includeArchived=true), newest first.
+        b.HasIndex(t => new { t.EventId, t.ArchivedAt }).HasFilter("is_archived");
         // Open-task counts per committee (committee cards and the deactivate guard).
         b.HasIndex(t => new { t.CommitteeId, t.Status }).HasFilter("NOT is_archived");
 
@@ -84,12 +98,16 @@ internal sealed class TaskAssigneeConfiguration : IEntityTypeConfiguration<TaskA
         b.HasIndex(a => a.TaskId);
         b.HasIndex(a => new { a.TaskId, a.PersonId }).IsUnique().HasDatabaseName(PersonIndex).HasFilter("person_id IS NOT NULL");
         b.HasIndex(a => new { a.TaskId, a.VolunteerId }).IsUnique().HasDatabaseName(VolunteerIndex).HasFilter("volunteer_id IS NOT NULL");
-        // "My tasks" in the sidebar.
-        b.HasIndex(a => a.PersonId).HasFilter("person_id IS NOT NULL");
+        // "My tasks" in the sidebar: the person's rows, with the task id in the index so the lookup is index-only.
+        b.HasIndex(a => new { a.PersonId, a.TaskId }).HasFilter("person_id IS NOT NULL");
 
-        b.HasOne<TaskItem>().WithMany().HasForeignKey(a => a.TaskId).OnDelete(DeleteBehavior.Restrict);
+        // Keyed on (task_id, event_id) and (volunteer_id, event_id): the row carries its event, so a volunteer from
+        // another event can never be assigned, whatever the API does.
+        b.HasOne<TaskItem>().WithMany().HasForeignKey(a => new { a.TaskId, a.EventId })
+            .HasPrincipalKey(t => new { t.Id, t.EventId }).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Person>().WithMany().HasForeignKey(a => a.PersonId).OnDelete(DeleteBehavior.Restrict);
-        b.HasOne<EventVolunteer>().WithMany().HasForeignKey(a => a.VolunteerId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<EventVolunteer>().WithMany().HasForeignKey(a => new { a.VolunteerId, a.EventId })
+            .HasPrincipalKey(v => new { v.Id, v.EventId }).OnDelete(DeleteBehavior.Restrict);
     }
 }
 
@@ -134,6 +152,8 @@ internal sealed class TaskCommentConfiguration : IEntityTypeConfiguration<TaskCo
         b.Ignore(c => c.IsDeleted);
         b.HasIndex(c => new { c.TaskId, c.CreatedAt });
         b.HasOne<TaskItem>().WithMany().HasForeignKey(c => c.TaskId).OnDelete(DeleteBehavior.Restrict);
+        // author_user_id is a user id (never a person id), and the FK says so.
+        b.HasOne<AppUser>().WithMany().HasForeignKey(c => c.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 
@@ -186,8 +206,10 @@ internal sealed class PointsAwardConfiguration : IEntityTypeConfiguration<Points
             t.HasCheckConstraint("ck_points_awards_multiplier", "multiplier BETWEEN 0 AND 2");
             // The snapshot has to add up: points are base × multiplier at the moment of the award.
             t.HasCheckConstraint("ck_points_awards_points", "points = round(base_points * multiplier, 2)");
+            // A reversal always has a reason, and can never predate the award it reverses.
             t.HasCheckConstraint("ck_points_awards_reversal",
                 $"(reversed_at IS NULL) = (reversal_reason IS NULL) "
+                + $"AND (reversed_at IS NULL OR reversed_at >= awarded_at) "
                 + $"AND (reversal_reason IS NULL OR char_length(reversal_reason) BETWEEN 1 AND {PointsAward.ReasonMaxLength})");
         });
         b.HasKey(a => a.Id);
@@ -213,9 +235,13 @@ internal sealed class PointsAwardConfiguration : IEntityTypeConfiguration<Points
         b.HasIndex(a => new { a.AwardedAt, a.PersonId }).HasFilter("reversed_at IS NULL")
             .IncludeProperties(a => new { a.Points, a.Role, a.EventId, a.CommitteeId });
 
-        b.HasOne<TaskItem>().WithMany().HasForeignKey(a => a.TaskId).OnDelete(DeleteBehavior.Restrict);
+        // The snapshot is keyed to the task *and* the committee of one event: (task_id, event_id) and
+        // (committee_id, event_id), so an award can never name a task or a committee of another event.
+        b.HasOne<TaskItem>().WithMany().HasForeignKey(a => new { a.TaskId, a.EventId })
+            .HasPrincipalKey(t => new { t.Id, t.EventId }).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Event>().WithMany().HasForeignKey(a => a.EventId).OnDelete(DeleteBehavior.Restrict);
-        b.HasOne<Committee>().WithMany().HasForeignKey(a => a.CommitteeId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Committee>().WithMany().HasForeignKey(a => new { a.CommitteeId, a.EventId })
+            .HasPrincipalKey(c => new { c.Id, c.EventId }).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Person>().WithMany().HasForeignKey(a => a.PersonId).OnDelete(DeleteBehavior.Restrict);
     }
 }
