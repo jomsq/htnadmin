@@ -29,6 +29,7 @@ export const boardMe: Me = {
     'Tasks.ViewBoard',
     'Tasks.Manage',
     'Tasks.Work',
+    'Leaderboard.View',
   ],
   preferences: { mode: 'system', textSize: 'default', density: 'comfortable' },
 }
@@ -44,7 +45,16 @@ export const goonMe: Me = {
   twoFactorEnabled: false,
   twoFactorRequired: false,
   // The four task/committee policies are resource-scoped: the flat list only says "may be allowed".
-  policies: ['People.View', 'Settings.Personal', 'Events.View', 'CheckIn.Scan', 'Committees.ManageMembers', 'Tasks.ViewBoard', 'Tasks.Work'],
+  policies: [
+    'People.View',
+    'Settings.Personal',
+    'Events.View',
+    'CheckIn.Scan',
+    'Committees.ManageMembers',
+    'Tasks.ViewBoard',
+    'Tasks.Work',
+    'Leaderboard.View',
+  ],
 }
 
 /** GET /api/settings/org as seeded (domain defaults, canvas brand color). */

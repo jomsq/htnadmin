@@ -150,7 +150,11 @@ export const routes: RouteObject[] = [
               },
               { path: '/my-tasks', lazy: async () => ({ Component: (await import('@/features/tasks/MyTasksPage')).MyTasksPage }) },
               { path: '/tasks', element: <Navigate to="/my-tasks" replace /> },
-              comingSoon('/leaderboard', 'Leaderboard', 'Points for goons and apprentices by event, quarter or all time.'),
+              {
+                path: '/leaderboard',
+                element: <RequirePolicy policy={Policies.LeaderboardView} />,
+                children: [{ index: true, lazy: async () => ({ Component: (await import('@/features/leaderboard/LeaderboardPage')).LeaderboardPage }) }],
+              },
               { path: '*', element: <NotFoundPage /> },
             ],
           },

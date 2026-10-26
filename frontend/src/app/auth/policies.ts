@@ -23,6 +23,8 @@ export const Policies = {
   TasksManage: 'Tasks.Manage',
   /** Resource-scoped: Board, the committee lead, or someone assigned to the task. */
   TasksWork: 'Tasks.Work',
+  /** Any signed-in user: the points leaderboard. Board members can read it but never appear on it. */
+  LeaderboardView: 'Leaderboard.View',
 } as const
 
 export type Policy = (typeof Policies)[keyof typeof Policies] | (string & {})

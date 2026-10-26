@@ -4,6 +4,7 @@ import { Card, CardHeader } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Stat } from '@/components/ui/Stat'
+import { MyPointsCard } from '@/features/leaderboard/components/MyPointsCard'
 
 const linkClass = 'text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-300'
 
@@ -19,7 +20,6 @@ const sections = [
   { title: 'Payments to verify', link: { to: '/events', label: 'View all' }, empty: 'No payments waiting for review.' },
   { title: 'My tasks', link: { to: '/my-tasks', label: 'Open board' }, empty: 'No tasks assigned to you yet.' },
   { title: 'Upcoming events', link: { to: '/events', label: 'All events' }, empty: 'No upcoming events.' },
-  { title: 'Leaderboard · this quarter', link: { to: '/leaderboard', label: 'Full board' }, empty: 'No points awarded this quarter yet.' },
 ]
 
 export function DashboardPage() {
@@ -48,6 +48,8 @@ export function DashboardPage() {
             <EmptyState title={s.empty} className="py-8" />
           </Card>
         ))}
+        {/* Hidden when the leaderboard has no row for the caller (board members are excluded). */}
+        <MyPointsCard />
       </div>
     </>
   )

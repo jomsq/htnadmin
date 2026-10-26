@@ -44,7 +44,7 @@ const navItems: NavItem[] = [
   { to: '/store', label: 'Merch store', icon: BagIcon },
   { to: '/finance', label: 'Finance', icon: WalletIcon, locked: true, policy: Policies.FinanceView },
   { to: '/my-tasks', label: 'My tasks', icon: CheckSquareIcon, badge: 'myTasks' },
-  { to: '/leaderboard', label: 'Leaderboard', icon: ChartIcon },
+  { to: '/leaderboard', label: 'Leaderboard', icon: ChartIcon, policy: Policies.LeaderboardView },
   { to: '/settings', label: 'Settings', icon: SlidersIcon },
 ]
 
