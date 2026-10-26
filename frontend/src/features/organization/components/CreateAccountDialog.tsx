@@ -2,7 +2,7 @@ import { useId, useState } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { isApiError } from '@/app/api'
-import { errorMessage } from '@/app/errors'
+import { errorMessage, messageForCode } from '@/app/errors'
 import { Alert } from '@/components/ui/Alert'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
@@ -31,6 +31,7 @@ const defaults: CreatePersonInput = { firstName: '', middleName: '', lastName: '
 export function CreateAccountDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const formId = useId()
   const levelLabelId = useId()
+  const levelErrorId = useId()
   const { toast } = useToast()
   const mutation = useCreatePersonMutation()
   const [formError, setFormError] = useState<string | null>(null)
@@ -66,6 +67,10 @@ export function CreateAccountDialog({ open, onClose }: { open: boolean; onClose:
       },
       onError: (e) => {
         let mapped = false
+        if (isApiError(e) && e.code === 'no_check_in') {
+          setError('level', { type: 'server', message: messageForCode(e.code) })
+          return
+        }
         if (isApiError(e, 400) || isApiError(e, 409)) {
           for (const [key, message] of Object.entries(e.fieldErrors)) {
             if (isFieldName(key)) {
@@ -129,9 +134,21 @@ export function CreateAccountDialog({ open, onClose }: { open: boolean; onClose:
             control={control}
             name="level"
             render={({ field }) => (
-              <SegmentedControl variant="chips" options={levelOptions} value={field.value} onChange={field.onChange} aria-labelledby={levelLabelId} />
+              <SegmentedControl
+                variant="chips"
+                options={levelOptions}
+                value={field.value}
+                onChange={field.onChange}
+                aria-labelledby={levelLabelId}
+                aria-describedby={errors.level ? levelErrorId : undefined}
+              />
             )}
           />
+          {errors.level?.message ? (
+            <p id={levelErrorId} className="w-full text-xs font-medium text-red-700 dark:text-red-400">
+              {errors.level.message}
+            </p>
+          ) : null}
         </div>
         <Alert tone="gray" live="status">
           {accessNotes[level]}

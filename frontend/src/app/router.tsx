@@ -3,17 +3,10 @@ import { RedirectIfSignedIn, RequireAuth } from './auth/RequireAuth'
 import { RequirePolicy } from './auth/RequirePolicy'
 import { Policies } from './auth/policies'
 import { AppLayout } from './layouts/AppLayout'
+import { KioskLayout } from './layouts/KioskLayout'
 import { ComingSoonPage } from './pages/ComingSoonPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { RouteErrorPage } from './pages/RouteErrorPage'
-
-const eventPlaceholder = (path: string, title: string, description: string): RouteObject => ({
-  path,
-  lazy: async () => {
-    const { EventPlaceholderPage } = await import('@/features/events/EventPlaceholderPage')
-    return { element: <EventPlaceholderPage title={title} description={description} /> }
-  },
-})
 
 const comingSoon = (path: string, title: string, description: string): RouteObject => ({
   path,
@@ -54,6 +47,19 @@ export const routes: RouteObject[] = [
       {
         element: <RequireAuth />,
         children: [
+          {
+            // Kiosk screens: no sidebar. Any signed-in role can scan (the API checks CheckIn.Scan too).
+            element: <KioskLayout />,
+            children: [
+              {
+                element: <RequirePolicy policy={Policies.CheckInScan} />,
+                children: [
+                  { path: '/events/:eventId/check-in/scan', lazy: async () => ({ Component: (await import('@/features/checkin/ScanPage')).ScanPage }) },
+                  { path: '/events/:eventId/check-in/desk', lazy: async () => ({ Component: (await import('@/features/checkin/DeskPage')).DeskPage }) },
+                ],
+              },
+            ],
+          },
           {
             element: <AppLayout />,
             children: [
@@ -104,7 +110,11 @@ export const routes: RouteObject[] = [
                           { index: true, lazy: async () => ({ Component: (await import('@/features/registrations/EmailSettingsPage')).EmailSettingsPage }) },
                         ],
                       },
-                      eventPlaceholder('check-in', 'Check-in', 'The phone scanner and the check-in desk will open from here.'),
+                      {
+                        path: 'check-in',
+                        element: <RequirePolicy policy={Policies.CheckInScan} />,
+                        children: [{ index: true, lazy: async () => ({ Component: (await import('@/features/checkin/CheckInPage')).CheckInPage }) }],
+                      },
                       { path: '*', element: <NotFoundPage /> },
                     ],
                   },

@@ -2,7 +2,7 @@ import { useId, useState } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { isApiError } from '@/app/api'
-import { errorMessage } from '@/app/errors'
+import { errorMessage, messageForCode } from '@/app/errors'
 import { Alert } from '@/components/ui/Alert'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
@@ -25,6 +25,7 @@ type Props = { person: Person; initialLevel: Level; onClose: () => void }
 export function PromoteDialog({ person, initialLevel, onClose }: Props) {
   const formId = useId()
   const levelLabelId = useId()
+  const levelErrorId = useId()
   const { toast } = useToast()
   const mutation = usePromotePersonMutation()
   const [formError, setFormError] = useState<string | null>(null)
@@ -63,7 +64,9 @@ export function PromoteDialog({ person, initialLevel, onClose }: Props) {
         },
         onError: (e) => {
           const reasonError = isApiError(e, 400) ? e.fieldErrors.reason : undefined
-          if (reasonError) setError('reason', { type: 'server', message: reasonError })
+          const levelError = isApiError(e) && e.code === 'no_check_in' ? messageForCode(e.code) : undefined
+          if (levelError) setError('toLevel', { type: 'server', message: levelError })
+          else if (reasonError) setError('reason', { type: 'server', message: reasonError })
           else setFormError(errorMessage(e))
         },
       },
@@ -101,9 +104,21 @@ export function PromoteDialog({ person, initialLevel, onClose }: Props) {
             control={control}
             name="toLevel"
             render={({ field }) => (
-              <SegmentedControl variant="chips" options={options} value={field.value} onChange={field.onChange} aria-labelledby={levelLabelId} />
+              <SegmentedControl
+                variant="chips"
+                options={options}
+                value={field.value}
+                onChange={field.onChange}
+                aria-labelledby={levelLabelId}
+                aria-describedby={errors.toLevel ? levelErrorId : undefined}
+              />
             )}
           />
+          {errors.toLevel?.message ? (
+            <p id={levelErrorId} className="text-xs font-medium text-red-700 dark:text-red-400">
+              {errors.toLevel.message}
+            </p>
+          ) : null}
         </div>
         <Field label="Reason" optional={!demotion} error={errors.reason?.message} hint={demotion ? 'Required when moving someone down.' : undefined}>
           {(p) => <Textarea {...p} {...register('reason')} rows={3} />}

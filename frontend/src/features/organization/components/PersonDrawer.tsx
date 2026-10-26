@@ -90,6 +90,7 @@ export function PersonDrawer({ person: listed, onClose }: { person: Person | nul
   const hasLogin = person.accountStatus === 'Active' || person.accountStatus === 'InvitePending'
   const next = nextLevel(person.level)
   const positions = detail.data?.positions ?? []
+  const attendance = detail.data?.attendance ?? []
 
   function onResend(p: Person) {
     resend.mutate(p.id, {
@@ -150,6 +151,22 @@ export function PersonDrawer({ person: listed, onClose }: { person: Person | nul
           </dl>
 
           <PathProgress level={person.level} />
+
+          {attendance.length ? (
+            <section aria-labelledby="attended-heading" className="flex flex-col gap-1.5 text-[0.8125rem]">
+              <h3 id="attended-heading" className="font-semibold text-gray-700 dark:text-gray-300">
+                Attended
+              </h3>
+              <ul className="flex flex-col gap-1.5">
+                {attendance.map((a) => (
+                  <li key={a.eventId} className="flex gap-2 text-gray-700 dark:text-gray-300">
+                    <span className="min-w-[88px] shrink-0 text-gray-600 tabular-nums dark:text-gray-400">{formatDate(a.checkedInAt)}</span>
+                    <span>{a.eventName}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
           <section aria-labelledby="history-heading" className="flex flex-col gap-1.5 text-[0.8125rem]">
             <h3 id="history-heading" className="font-semibold text-gray-700 dark:text-gray-300">

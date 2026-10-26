@@ -87,10 +87,15 @@ export const historyEntrySchema = z.object({
 })
 export type HistoryEntry = z.infer<typeof historyEntrySchema>
 
+export const attendanceSchema = z.object({ eventId: z.string(), eventName: z.string(), checkedInAt: z.string() })
+export type Attendance = z.infer<typeof attendanceSchema>
+
 export const personDetailSchema = z.object({
   person: personSchema,
   positions: z.array(z.object({ id: z.string(), title: z.string(), kind: positionKindSchema })),
   history: z.array(historyEntrySchema),
+  /** Events this person checked in at (matched by email). Board only; absent for other viewers. */
+  attendance: z.array(attendanceSchema).nullish(),
 })
 export type PersonDetail = z.infer<typeof personDetailSchema>
 

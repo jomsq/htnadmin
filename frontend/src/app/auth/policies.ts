@@ -10,6 +10,8 @@ export const Policies = {
   EventsManage: 'Events.Manage',
   /** Board only: manual registration, mark paid, cancel, revert, resend, export. */
   RegistrationsManage: 'Registrations.Manage',
+  /** Any signed-in user: phone scanner and check-in desk. The event must be published. */
+  CheckInScan: 'CheckIn.Scan',
 } as const
 
 export type Policy = (typeof Policies)[keyof typeof Policies] | (string & {})

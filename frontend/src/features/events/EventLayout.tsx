@@ -36,6 +36,7 @@ export function EventLayout() {
   const query = useEventQuery(eventId)
   const canManage = useCan(Policies.EventsManage)
   const canRegistrations = useCan(Policies.RegistrationsManage)
+  const canCheckIn = useCan(Policies.CheckInScan)
 
   if (query.isPending) {
     return (
@@ -92,7 +93,7 @@ export function EventLayout() {
     { to: `${base}/details`, label: 'Details' },
     ...(canRegistrations ? [{ to: `${base}/registrations`, label: 'Registrations' }] : []),
     ...(canManage ? [{ to: `${base}/emails`, label: 'Emails' }] : []),
-    { to: `${base}/check-in`, label: 'Check-in' },
+    ...(canCheckIn ? [{ to: `${base}/check-in`, label: 'Check-in' }] : []),
   ]
 
   return (

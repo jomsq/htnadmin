@@ -57,6 +57,11 @@ export const MinusIcon = createIcon('M5 12h14')
 export const UploadIcon = createIcon('M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12')
 export const ChevronRightIcon = createIcon('M9 18l6-6-6-6')
 export const ChevronLeftIcon = createIcon('M15 18l-6-6 6-6')
+export const QrIcon = createIcon('M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2M18 14h2v2M14 18v2h2M18 18v2h2')
+export const CameraIcon = createIcon('M3 7h4l2-3h6l2 3h4v13H3zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z')
+export const PhoneIcon = createIcon('M7 2h10a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM11 18h2')
+export const LaptopIcon = createIcon('M4 5h16v11H4zM2 20h20')
+export const ExclamationIcon = createIcon('M12 5v9M12 19h.01')
 export const CircleIcon = createIcon('M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z')
 
 /** Circle with the left half filled ("own / scoped" access). */
