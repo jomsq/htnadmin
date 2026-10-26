@@ -12,8 +12,9 @@ const frameColors: Record<ResultTone, string> = {
   green: 'border-green-400',
   yellow: 'border-yellow-400',
   red: 'border-red-400',
+  blue: 'border-blue-400',
 }
-const lineColors: Record<ResultTone, string> = { gray: 'bg-white', green: 'bg-green-400', yellow: 'bg-yellow-400', red: 'bg-red-400' }
+const lineColors: Record<ResultTone, string> = { gray: 'bg-white', green: 'bg-green-400', yellow: 'bg-yellow-400', red: 'bg-red-400', blue: 'bg-blue-400' }
 
 function errorName(e: unknown): string {
   if (e instanceof DOMException || e instanceof Error) return e.name

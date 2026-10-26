@@ -1,5 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/app/api'
+import { searchTermReady } from './format'
 import {
   checkInStatsSchema,
   recentScansSchema,
@@ -41,13 +42,13 @@ export function useRecentScansQuery(eventId: string, station: string, enabled = 
   })
 }
 
-/** Search needs at least 2 characters; the server caps results at 20. */
+/** Names need 3+ characters, participant IDs 6+ (see searchTermReady); the server caps results at 20. */
 export function useCheckInSearchQuery(eventId: string, q: string) {
   const term = q.trim()
   return useQuery({
     queryKey: checkInKeys.search(eventId, term),
     queryFn: () => api(`${base(eventId)}/search?q=${encodeURIComponent(term)}`, searchResultsSchema),
-    enabled: !!eventId && term.length >= 2,
+    enabled: !!eventId && searchTermReady(term),
     placeholderData: keepPreviousData,
     staleTime: 0,
   })

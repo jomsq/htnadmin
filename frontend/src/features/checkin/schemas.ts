@@ -2,7 +2,8 @@ import { z } from 'zod'
 
 /** Shapes from phase3-contract.md section 3C. */
 
-export const scanResultKindSchema = z.enum(['Welcome', 'AlreadyCheckedIn', 'NotPaid', 'Cancelled', 'Invalid'])
+/** Lookup = the payload was a participant ID (typed or QR'd), not a signed ticket: staff must confirm. */
+export const scanResultKindSchema = z.enum(['Welcome', 'AlreadyCheckedIn', 'NotPaid', 'Cancelled', 'Invalid', 'Lookup'])
 export type ScanResultKind = z.infer<typeof scanResultKindSchema>
 
 export const scanAttendeeSchema = z.object({
@@ -14,8 +15,14 @@ export const scanAttendeeSchema = z.object({
 })
 export type ScanAttendee = z.infer<typeof scanAttendeeSchema>
 
+export const attendeeStatusSchema = z.enum(['PendingPayment', 'Paid', 'CheckedIn', 'Cancelled'])
+export type AttendeeStatus = z.infer<typeof attendeeStatusSchema>
+
 export const scanResponseSchema = z.object({
   result: scanResultKindSchema,
+  /** Lookup only: who to check in with POST /manual, and where their registration stands. */
+  attendeeId: z.string().nullish(),
+  status: attendeeStatusSchema.nullish(),
   attendee: scanAttendeeSchema.nullable(),
   checkedInAt: z.string().nullish(),
   checkedInStation: z.string().nullish(),
@@ -40,7 +47,7 @@ export const recentScanSchema = z.object({
 export type RecentScan = z.infer<typeof recentScanSchema>
 export const recentScansSchema = z.array(recentScanSchema)
 
-export const searchStatusSchema = z.enum(['PendingPayment', 'Paid', 'CheckedIn', 'Cancelled'])
+export const searchStatusSchema = attendeeStatusSchema
 
 export const searchResultSchema = z.object({
   attendeeId: z.string(),

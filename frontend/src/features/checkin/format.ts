@@ -21,7 +21,7 @@ export function formatAgo(iso: string, now = Date.now()): string {
   return formatScanTime(iso)
 }
 
-export type ResultTone = 'green' | 'yellow' | 'red' | 'gray'
+export type ResultTone = 'green' | 'yellow' | 'red' | 'blue' | 'gray'
 
 /** What happened on the last scan, as shown in the live result card. */
 export type ScanOutcome =
@@ -30,6 +30,26 @@ export type ScanOutcome =
   | { kind: 'error'; message: string }
 
 export type ResultView = { tone: ResultTone; title: string; name?: string; meta: string }
+
+/** A Lookup that staff may confirm (only a paid attendee who isn't in yet). */
+export function confirmableLookup(outcome: ScanOutcome | null): { attendeeId: string; name: string } | null {
+  if (outcome?.kind !== 'result') return null
+  const d = outcome.data
+  if (d.result !== 'Lookup' || d.status !== 'Paid' || !d.attendeeId) return null
+  return { attendeeId: d.attendeeId, name: d.attendee?.name ?? 'this attendee' }
+}
+
+/**
+ * Search rules (same as the API): names need 3+ characters; participant IDs match in full or by a
+ * prefix of 6+ characters. Names can't contain digits, so a digit or "HTN-" means an ID.
+ */
+export function searchTermReady(term: string): boolean {
+  const t = term.trim()
+  const idLike = /\d/.test(t) || /^htn-/i.test(t)
+  return t.length >= (idLike ? 6 : 3)
+}
+
+export const SEARCH_HINT = 'Type at least 3 letters of a name, or at least 6 characters of a participant ID (e.g. HTN-7K).'
 
 export const SLOW_DOWN_TITLE = 'Slow down'
 export const SLOW_DOWN_MESSAGE = 'Too many scans in a short time. Wait a few seconds, then scan again.'
@@ -68,6 +88,21 @@ export function describeOutcome(outcome: ScanOutcome, size: 'desk' | 'phone'): R
     }
     case 'Cancelled':
       return { tone: 'red', title: 'Cancelled', name, meta: 'This registration was cancelled. Send them to the help desk.' }
+    case 'Lookup': {
+      const details = attendee ? [attendee.ticketName, attendee.participantId, attendee.shirtSize ? `Shirt ${attendee.shirtSize}` : ''].filter(Boolean).join(' · ') : ''
+      const time = formatScanTime(checkedInAt)
+      const state =
+        outcome.data.status === 'Paid'
+          ? 'Paid · check their ID, then confirm the check-in'
+          : outcome.data.status === 'CheckedIn'
+            ? `Already checked in · ${[time ? `Scanned ${time}` : 'Scanned earlier', checkedInStation ? `at ${checkedInStation}` : ''].filter(Boolean).join(' ')}`
+            : outcome.data.status === 'PendingPayment'
+              ? `Not paid · ${amountDue != null ? `Send to the help desk to settle ${formatPeso(amountDue)}` : 'Send to the help desk to settle the payment'}`
+              : outcome.data.status === 'Cancelled'
+                ? 'Cancelled · This registration was cancelled. Send them to the help desk.'
+                : ''
+      return { tone: 'blue', title: 'Check the ticket holder', name, meta: [details, state].filter(Boolean).join(' — ') }
+    }
     case 'Invalid':
       return {
         tone: 'red',
@@ -87,6 +122,7 @@ export const recentLabels: Record<ScanResultKind, string> = {
   NotPaid: 'Not paid',
   Cancelled: 'Cancelled',
   Invalid: 'Invalid',
+  Lookup: 'Looked up',
 }
 
 export const recentTones: Record<ScanResultKind, ResultTone> = {
@@ -95,6 +131,7 @@ export const recentTones: Record<ScanResultKind, ResultTone> = {
   NotPaid: 'red',
   Cancelled: 'red',
   Invalid: 'red',
+  Lookup: 'blue',
 }
 
 export function percentCheckedIn(checkedIn: number, paid: number): number {

@@ -151,9 +151,8 @@ function Desk({ event }: { event: EventDetail }) {
                   </Button>
                 </div>
               </form>
-              <span id="scan-input-hint" className="inline-flex items-center gap-1.5 text-[0.8125rem] text-green-700 dark:text-green-400">
-                <span aria-hidden="true" className="size-2 rounded-full bg-green-600 dark:bg-green-400" />
-                Ready · the field stays focused, so staff never need to click
+              <span id="scan-input-hint" className="text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                Scan the ticket QR. Typed IDs need a confirmation.
               </span>
             </Card>
           ) : (
@@ -166,7 +165,13 @@ function Desk({ event }: { event: EventDetail }) {
             />
           )}
 
-          <ResultCard outcome={flow.outcome} outcomeKey={flow.outcomeKey} size="desk" />
+          <ResultCard
+            outcome={flow.outcome}
+            outcomeKey={flow.outcomeKey}
+            size="desk"
+            onConfirm={(id) => void flow.submitManual(id)}
+            confirming={flow.manualPending}
+          />
 
           <div>
             <Button variant="secondary" size="lg" onClick={() => setSearchOpen(true)}>

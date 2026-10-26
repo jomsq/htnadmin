@@ -43,6 +43,18 @@ export const cancelled = () => ({
   amountDue: null,
 })
 
+/** A typed or QR'd participant ID: staff must confirm before anyone is checked in. */
+export const lookup = (status: 'PendingPayment' | 'Paid' | 'CheckedIn' | 'Cancelled', over: Record<string, unknown> = {}) => ({
+  result: 'Lookup',
+  attendeeId: 'a1',
+  attendee: attendee(),
+  status,
+  checkedInAt: status === 'CheckedIn' ? '2026-11-22T00:14:00Z' : null,
+  checkedInStation: status === 'CheckedIn' ? 'Desk 1' : null,
+  amountDue: status === 'PendingPayment' ? 1500 : null,
+  ...over,
+})
+
 export const invalid = () => ({ result: 'Invalid', attendee: null, checkedInAt: null, checkedInStation: null, amountDue: null })
 
 export const stats = (over: Record<string, unknown> = {}) => ({ checkedIn: 187, paid: 264, thisStation: 41, stationsOnline: 4, ...over })

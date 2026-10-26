@@ -28,7 +28,8 @@ export function useScanFlow(eventId: string, station: string, sound = false) {
         const data = await request
         if (id !== seq.current) return
         setState({ outcome: { kind: 'result', data }, key: id })
-        if (sound) (data.result === 'Welcome' ? playBeep : playBuzz)()
+        // A lookup waits for staff to confirm: no sound until the real result.
+        if (sound && data.result !== 'Lookup') (data.result === 'Welcome' ? playBeep : playBuzz)()
       } catch (e) {
         if (id !== seq.current) return
         setState({

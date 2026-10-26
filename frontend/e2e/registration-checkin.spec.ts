@@ -123,7 +123,8 @@ test('visitor registers with STUDENT20, admin marks paid, desk checks in once', 
 
     const scanField = admin.getByLabel('Scan a ticket, or type a participant ID')
     const result = admin.getByRole('status', { name: 'Scan result' })
-    const confirm = result.getByRole('button', { name: 'Check in', exact: true })
+    // The confirm button sits outside the live region and is named "Check in {name}" (the form's own button is just "Check in").
+    const confirm = admin.getByRole('button', { name: /^Check in \S/ })
 
     // A typed ID is only a lookup: nobody is checked in until staff compare the person and confirm.
     await scanField.fill(participantId)

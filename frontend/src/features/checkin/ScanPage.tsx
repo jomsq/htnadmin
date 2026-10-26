@@ -62,7 +62,14 @@ function Scanner({ event }: { event: EventDetail }) {
         onDecode={flow.submitPayload}
       />
 
-      <ResultCard outcome={flow.outcome} outcomeKey={flow.outcomeKey} size="phone" className="mx-5 min-h-33" />
+      <ResultCard
+        outcome={flow.outcome}
+        outcomeKey={flow.outcomeKey}
+        size="phone"
+        className="mx-5 min-h-33"
+        onConfirm={(id) => void flow.submitManual(id)}
+        confirming={flow.manualPending}
+      />
 
       <div className="mt-auto flex flex-col gap-2.5 px-5 pt-4 pb-6">
         <Button variant="secondary" block className="h-12 text-[0.9375rem]" onClick={() => setSearchOpen(true)}>

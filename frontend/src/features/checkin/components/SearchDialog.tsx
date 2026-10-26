@@ -9,6 +9,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { RegistrationStatusBadges } from '@/features/registrations/components/badges'
 import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { useCheckInSearchQuery } from '../api'
+import { SEARCH_HINT, searchTermReady } from '../format'
 
 type Props = {
   eventId: string
@@ -45,7 +46,7 @@ export function SearchDialog({ eventId, onClose, onCheckIn }: Props) {
       initialFocusRef={inputRef}
     >
       <div className="flex flex-col gap-4">
-        <Field label="Name or participant ID" hint="Type at least 2 characters, e.g. Maria Santos or HTN-7K3Q-9XWD.">
+        <Field label="Name or participant ID" hint={SEARCH_HINT}>
           {(p) => (
             <Input
               {...p}
@@ -60,7 +61,7 @@ export function SearchDialog({ eventId, onClose, onCheckIn }: Props) {
           )}
         </Field>
         <div aria-live="polite" className="flex flex-col gap-2">
-          {term.length < 2 ? null : search.isPending ? (
+          {!searchTermReady(term) ? null : search.isPending ? (
             <Spinner label="Searching" className="py-4 text-gray-600 dark:text-gray-400" />
           ) : search.isError ? (
             <Alert

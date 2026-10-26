@@ -1,4 +1,7 @@
 import type { UseQueryResult } from '@tanstack/react-query'
+import { isApiError } from '@/app/api'
+import { messageForCode } from '@/app/errors'
+import { Alert } from '@/components/ui/Alert'
 import { Button } from '@/components/ui/Button'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { Skeleton } from '@/components/ui/Spinner'
@@ -26,6 +29,14 @@ export function CheckInStats({ query, stationLabel = 'This station', compact = f
     )
   }
   if (query.isError) {
+    // Outside the check-in window every check-in endpoint answers 409 check_in_closed.
+    if (isApiError(query.error, 409) && query.error.code === 'check_in_closed') {
+      return (
+        <Alert tone="yellow" live="status" className={className}>
+          {messageForCode('check_in_closed')}
+        </Alert>
+      )
+    }
     return (
       <div className={cn('flex flex-wrap items-center justify-between gap-2 text-[0.8125rem] text-gray-600 dark:text-gray-300', className)}>
         <span>Could not load the check-in numbers.</span>

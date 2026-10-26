@@ -12,6 +12,7 @@ const dots: Record<ResultTone, string> = {
   green: 'bg-green-600 dark:bg-green-400',
   yellow: 'bg-amber-600 dark:bg-yellow-400',
   red: 'bg-red-600 dark:bg-red-400',
+  blue: 'bg-blue-600 dark:bg-blue-400',
   gray: 'bg-gray-400',
 }
 
@@ -19,6 +20,7 @@ const labelColors: Record<ResultTone, string> = {
   green: 'text-green-700 dark:text-green-400',
   yellow: 'text-yellow-800 dark:text-yellow-300',
   red: 'text-red-700 dark:text-red-400',
+  blue: 'text-blue-700 dark:text-blue-300',
   gray: 'text-gray-600 dark:text-gray-400',
 }
 

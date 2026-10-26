@@ -44,6 +44,7 @@ const codeMessages: Record<string, string> = {
   invalid_status: 'This registration changed in the meantime. Refresh and try again.',
   already_checked_in: "This attendee has already checked in, so the payment can't be reverted.",
   capacity_exceeded: 'This event or ticket is full now. Add a reason to mark it paid anyway.',
+  check_in_closed: 'Check-in is open from a day before the event until a day after it ends.',
   no_check_in: 'Only people who have checked in at an event can be Members.',
   proof_invalid: 'This upload link is invalid or has expired.',
 }

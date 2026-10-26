@@ -4,8 +4,8 @@ import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { routes } from '@/app/router'
 import { detail, draftDetail } from '@/test/fixtures/events'
-import { recent, stats, welcome } from '@/test/fixtures/checkin'
-import { boardMe, goonMe, server, signInAs } from '@/test/server'
+import { lookup, recent, stats, welcome } from '@/test/fixtures/checkin'
+import { boardMe, goonMe, problem, server, signInAs } from '@/test/server'
 import { renderRoutes } from '@/test/render'
 
 // Stand-in for the lazily imported camera package.
@@ -84,6 +84,28 @@ describe('Phone scanner', () => {
     expect(screen.getByRole('link', { name: 'Use a laptop + handheld scanner instead' })).toHaveAttribute('href', '/events/e1/check-in/desk')
   })
 
+  it('needs a tap to confirm when the QR is just a participant ID', async () => {
+    signInAs(goonMe)
+    mockApi()
+    const manual: unknown[] = []
+    server.use(
+      http.post('/api/events/e1/check-in/scan', () => HttpResponse.json(lookup('Paid'))),
+      http.post('/api/events/e1/check-in/manual', async ({ request }) => {
+        manual.push(await request.json())
+        return HttpResponse.json(welcome())
+      }),
+    )
+    const { user } = renderApp('/events/e1/check-in/scan')
+    await waitFor(() => expect(camera.onDecode).not.toBeNull())
+    act(() => camera.onDecode?.({ data: 'HTN-7K3Q-9XWD' }))
+    const region = screen.getByRole('status', { name: 'Scan result' })
+    await waitFor(() => expect(region).toHaveTextContent('Check the ticket holder'))
+    expect(manual).toEqual([])
+    await user.click(screen.getByRole('button', { name: 'Check in Maria Santos' }))
+    await waitFor(() => expect(region).toHaveTextContent('Welcome in'))
+    expect(manual).toEqual([{ attendeeId: 'a1', station: 'Main entrance' }])
+  })
+
   it('explains when there is no camera and keeps search as the fallback', async () => {
     camera.hasCamera = false
     signInAs(boardMe)
@@ -150,6 +172,14 @@ describe('Check-in tab', () => {
     await user.type(field, ' 2')
     expect(field).toHaveValue('Main entrance 2')
     vi.restoreAllMocks()
+  })
+
+  it('shows the check-in window message when check-in is closed', async () => {
+    signInAs(goonMe)
+    mockApi()
+    server.use(http.get('/api/events/e1/check-in/stats', () => problem(409, 'Conflict', 'check_in_closed')))
+    renderApp('/events/e1/check-in')
+    expect(await screen.findByText('Check-in is open from a day before the event until a day after it ends.')).toBeInTheDocument()
   })
 
   it('hides the Check-in tab without CheckIn.Scan', async () => {
