@@ -1,7 +1,7 @@
 import { useId } from 'react'
 import type { UseFormRegisterReturn } from 'react-hook-form'
 import { Field } from '@/components/ui/Field'
-import { Input, Select } from '@/components/ui/Input'
+import { Input, Select, Textarea } from '@/components/ui/Input'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import type { PaymentAccount } from '@/features/settings/schemas'
 import { methodLabels } from '../format'
@@ -15,12 +15,22 @@ type Props = {
   onMethod: (m: PaymentMethod) => void
   accounts: PaymentAccount[]
   accountsLoading?: boolean
-  fields: { account: UseFormRegisterReturn; reference: UseFormRegisterReturn; receivedAt: UseFormRegisterReturn }
-  errors: { account?: string; reference?: string; receivedAt?: string }
+  fields: {
+    account: UseFormRegisterReturn
+    reference: UseFormRegisterReturn
+    receivedAt: UseFormRegisterReturn
+    reason: UseFormRegisterReturn
+    overrideCapacityReason: UseFormRegisterReturn
+  }
+  errors: { account?: string; reference?: string; receivedAt?: string; reason?: string; overrideCapacityReason?: string }
+  /** Comping something that costs money needs a reason. */
+  compReasonRequired: boolean
+  /** Shown after the API answered capacity_exceeded. */
+  showOverride: boolean
 }
 
 /** Method, payment account (from Settings), reference and received date. Shared by bulk mark-paid and manual registration. */
-export function MarkPaidFields({ method, onMethod, accounts, accountsLoading, fields, errors }: Props) {
+export function MarkPaidFields({ method, onMethod, accounts, accountsLoading, fields, errors, compReasonRequired, showOverride }: Props) {
   const fitting = accountsFor(method, accounts)
   const methodId = useId()
   return (
@@ -32,7 +42,17 @@ export function MarkPaidFields({ method, onMethod, accounts, accountsLoading, fi
         <SegmentedControl aria-labelledby={methodId} options={methodOptions} value={method} onChange={onMethod} />
       </div>
       {method === 'Comp' ? (
-        <p className="text-[0.8125rem] text-gray-600 dark:text-gray-400">Comped seats are free (sponsor or guest). No account or reference is recorded.</p>
+        <>
+          <p className="text-[0.8125rem] text-gray-600 dark:text-gray-400">Comped seats are free (sponsor or guest). No account or reference is recorded.</p>
+          <Field
+            label="Reason for comping"
+            optional={!compReasonRequired}
+            error={errors.reason}
+            hint={compReasonRequired ? 'Required because this registration costs something. It is kept in the history.' : undefined}
+          >
+            {(p) => <Textarea {...p} {...fields.reason} rows={2} maxLength={500} />}
+          </Field>
+        </>
       ) : (
         <>
           <Field
@@ -61,6 +81,11 @@ export function MarkPaidFields({ method, onMethod, accounts, accountsLoading, fi
       <Field label="Received" error={errors.receivedAt} hint="Asia/Manila time.">
         {(p) => <Input {...p} {...fields.receivedAt} type="datetime-local" />}
       </Field>
+      {showOverride ? (
+        <Field label="Override reason" error={errors.overrideCapacityReason} hint="Why this seat should count even though the event or ticket is full. It is kept in the history.">
+          {(p) => <Textarea {...p} {...fields.overrideCapacityReason} rows={2} maxLength={500} />}
+        </Field>
+      ) : null}
     </div>
   )
 }

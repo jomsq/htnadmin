@@ -237,7 +237,7 @@ function DetailSections({ d }: { d: RegistrationDetail }) {
             </a>
             <dl className="flex flex-col gap-1.5">
               {d.proof.reference ? (
-                <Row label="Reference">
+                <Row label="Reference (from registrant)">
                   <span className="font-mono">{d.proof.reference}</span>
                 </Row>
               ) : null}

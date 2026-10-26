@@ -26,7 +26,10 @@ export const registrationRowSchema = z.object({
   status: registrationStatusSchema,
   overdue: z.boolean(),
   method: paymentMethodSchema.nullable(),
+  /** Payment reference recorded by an admin when marking paid. */
   reference: z.string().nullable(),
+  /** Reference typed by the registrant with their proof upload. Unverified. */
+  proofReference: z.string().nullish(),
   hasProof: z.boolean(),
   createdAt: z.string(),
   source: registrationSourceSchema,
@@ -159,8 +162,6 @@ export const registrationResultSchema = z.object({
   deadline: z.string().nullish(),
   proofMode: proofModeSchema,
   email: z.string(),
-  /** Not in the contract yet: if the API returns the proof-upload token, the success screen links to it. */
-  proofToken: z.string().nullish(),
 })
 export type RegistrationResult = z.infer<typeof registrationResultSchema>
 
@@ -177,8 +178,34 @@ export type ProofInfo = z.infer<typeof proofInfoSchema>
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-const requiredName = (what: string) => z.string().trim().min(1, `Enter ${what}.`).max(60, 'Use 60 characters or fewer.')
-const optionalText = (max: number) => z.string().trim().max(max, `Use ${max} characters or fewer.`)
+export const NAME_MAX = 80
+/** Same rules as the API: letters (any language), accents, spaces and . ' - ; starts with a letter. */
+const NAME_RE = /^[\p{L}\p{M}][\p{L}\p{M} .'-]*$/u
+/** Occupation and company also allow digits and & , ( ) / */
+const ORG_TEXT_RE = /^[\p{L}\p{M}\p{N} .'&,()/-]*$/u
+const LINK_OR_MARKUP_RE = /:\/\/|[@<>]/
+
+export const NAME_MESSAGE = 'Use letters only. Spaces, periods, apostrophes and hyphens are fine.'
+export const ORG_TEXT_MESSAGE = "Use letters, numbers, spaces and . ' - & , ( ) / only."
+export const NO_LINKS_MESSAGE = "Links, email addresses and < > can't go in this field."
+export const DUPLICATE_MEMBER_EMAIL_MESSAGE = 'Each person in the group needs their own email address.'
+
+const nameText = z
+  .string()
+  .trim()
+  .max(NAME_MAX, `Use ${NAME_MAX} characters or fewer.`)
+  .refine((v) => !LINK_OR_MARKUP_RE.test(v), NO_LINKS_MESSAGE)
+  // One message per problem: the link message wins over the letters-only one.
+  .refine((v) => v === '' || LINK_OR_MARKUP_RE.test(v) || NAME_RE.test(v), NAME_MESSAGE)
+const requiredName = (what: string) => nameText.refine((v) => v.length > 0, `Enter ${what}.`)
+const optionalName = nameText
+const orgText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max, `Use ${max} characters or fewer.`)
+    .refine((v) => !LINK_OR_MARKUP_RE.test(v), NO_LINKS_MESSAGE)
+    .refine((v) => LINK_OR_MARKUP_RE.test(v) || ORG_TEXT_RE.test(v), ORG_TEXT_MESSAGE)
 const email = z
   .string()
   .trim()
@@ -226,7 +253,30 @@ export type BuyerValues = {
 
 export type MemberValues = { firstName: string; lastName: string; email: string }
 
-export type MarkPaidValues = { method: PaymentMethod; paymentAccountId: string; reference: string; receivedAt: string }
+export type MarkPaidValues = {
+  method: PaymentMethod
+  paymentAccountId: string
+  reference: string
+  receivedAt: string
+  /** Required when comping a registration that costs something. */
+  reason: string
+  /** Only after the API answered capacity_exceeded: why to mark it paid although the event or ticket is full. */
+  overrideCapacityReason: string
+}
+
+export const COMP_REASON_MESSAGE = 'Enter why this registration is comped. It is kept in the history.'
+export const OVERRIDE_REASON_MESSAGE = 'Enter why it should be marked paid even though it is full.'
+
+/** Server-independent checks for the two conditional reasons (the server checks the same). */
+export function markPaidReasonErrors(
+  p: Pick<MarkPaidValues, 'method' | 'reason' | 'overrideCapacityReason'>,
+  o: { costsSomething: boolean; overrideNeeded: boolean },
+): Partial<Record<'reason' | 'overrideCapacityReason', string>> {
+  const out: Partial<Record<'reason' | 'overrideCapacityReason', string>> = {}
+  if (p.method === 'Comp' && o.costsSomething && !p.reason.trim()) out.reason = COMP_REASON_MESSAGE
+  if (o.overrideNeeded && !p.overrideCapacityReason.trim()) out.overrideCapacityReason = OVERRIDE_REASON_MESSAGE
+  return out
+}
 
 /** Form values for public and manual registration (one shape so the field components are shared). */
 export type RegistrationFormValues = {
@@ -260,15 +310,15 @@ export const emptyMember: MemberValues = { firstName: '', lastName: '', email: '
 function buyerSchema(o: FormOptions) {
   return z.object({
     firstName: requiredName('the first name'),
-    middleName: optionalText(60),
+    middleName: optionalName,
     lastName: requiredName('the last name'),
     gender: o.genders.length
       ? z.string().refine((v) => o.genders.includes(v), 'Select a gender.')
       : z.string(),
     email,
     mobile: z.string().refine((v) => normalizeMobile(v) !== null, MOBILE_MESSAGE),
-    occupation: optionalText(120),
-    company: optionalText(120),
+    occupation: orgText(120),
+    company: orgText(120),
     shirtSize: oneOfOrEmpty(o.shirtSizes, 'Pick a shirt size.'),
     hearAbout: oneOfOrEmpty(o.hearAbout, 'Pick an option.'),
   })
@@ -287,6 +337,8 @@ const markPaidShape = (needsAccount: (m: PaymentMethod) => boolean) =>
       paymentAccountId: z.string(),
       reference: z.string().trim().max(60, 'Use 60 characters or fewer.'),
       receivedAt: z.string().refine((v) => v === '' || isLocalDateTime(v), 'Pick a date and time.'),
+      reason: z.string().trim().max(500, 'Use 500 characters or fewer.'),
+      overrideCapacityReason: z.string().trim().max(500, 'Use 500 characters or fewer.'),
     })
     .superRefine((v, ctx) => {
       if (needsAccount(v.method) && !v.paymentAccountId) {
@@ -311,9 +363,24 @@ export function registrationFormSchema(o: FormOptions & { mode: 'public' | 'manu
       consent: z.boolean().refine((v) => v, o.mode === 'public' ? 'Please agree to continue.' : 'Confirm the attendee agreed to the data privacy terms.'),
       website: z.string(),
       markPaid: z.boolean(),
-      payment: z.object({ method: paymentMethodSchema, paymentAccountId: z.string(), reference: z.string(), receivedAt: z.string() }),
+      payment: z.object({
+        method: paymentMethodSchema,
+        paymentAccountId: z.string(),
+        reference: z.string(),
+        receivedAt: z.string(),
+        reason: z.string(),
+        overrideCapacityReason: z.string(),
+      }),
     })
     .superRefine((v, ctx) => {
+      // Every attendee gets their own ticket email, so group emails must differ (case-insensitive).
+      const seen = new Set([v.buyer.email.trim().toLowerCase()])
+      v.members.forEach((m, i) => {
+        const e = m.email.trim().toLowerCase()
+        if (!e) return
+        if (seen.has(e)) ctx.addIssue({ code: 'custom', path: ['members', i, 'email'], message: DUPLICATE_MEMBER_EMAIL_MESSAGE })
+        seen.add(e)
+      })
       if (o.mode !== 'manual' || !v.markPaid) return
       const parsed = markPaidShape(o.needsAccount ?? (() => false)).safeParse(v.payment)
       if (parsed.success) return
@@ -336,7 +403,14 @@ export type AttendeeInput = {
   hearAbout?: string
 }
 
-export type MarkPaidBody = { method: PaymentMethod; paymentAccountId?: string; reference?: string; receivedAt?: string }
+export type MarkPaidBody = {
+  method: PaymentMethod
+  paymentAccountId?: string
+  reference?: string
+  receivedAt?: string
+  reason?: string
+  overrideCapacityReason?: string
+}
 
 export type PublicRegistrationBody = {
   idempotencyKey: string
@@ -381,6 +455,8 @@ export function toMarkPaidBody(p: MarkPaidValues): MarkPaidBody {
     paymentAccountId: noAccount ? undefined : opt(p.paymentAccountId),
     reference: noAccount ? undefined : opt(p.reference),
     receivedAt: p.receivedAt ? fromManilaInput(p.receivedAt) : undefined,
+    reason: opt(p.reason),
+    overrideCapacityReason: opt(p.overrideCapacityReason),
   }
 }
 
@@ -484,6 +560,6 @@ export function emptyRegistrationValues(ticketTypeId = '', groupSize = 1): Regis
     consent: false,
     website: '',
     markPaid: false,
-    payment: { method: 'GCash', paymentAccountId: '', reference: '', receivedAt: '' },
+    payment: { method: 'GCash', paymentAccountId: '', reference: '', receivedAt: '', reason: '', overrideCapacityReason: '' },
   }
 }

@@ -1,7 +1,8 @@
-import { useId, useMemo } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { errorMessage } from '@/app/errors'
+import { isApiError } from '@/app/api'
+import { errorMessage, messageForCode } from '@/app/errors'
 import { Alert } from '@/components/ui/Alert'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
@@ -12,7 +13,7 @@ import { formatPeso } from '@/lib/format'
 import { useMarkPaidMutation } from '../api'
 import { defaultAccountId, needsAccountFor } from '../helpers'
 import { nowManilaInput } from '../format'
-import { markPaidFormSchema, toMarkPaidBody, type MarkPaidValues, type RegistrationRow } from '../schemas'
+import { markPaidFormSchema, markPaidReasonErrors, toMarkPaidBody, type MarkPaidValues, type RegistrationRow } from '../schemas'
 import { MarkPaidFields } from './MarkPaidFields'
 
 export type MarkPaidTarget = Pick<RegistrationRow, 'id' | 'status' | 'total'>
@@ -63,30 +64,49 @@ function MarkPaidForm({
   const pending = targets.filter((t) => t.status === 'PendingPayment')
   const skipped = targets.length - pending.length
   const total = pending.reduce((sum, t) => sum + t.total, 0)
+  const costsSomething = pending.some((t) => t.total > 0)
   const schema = useMemo(() => markPaidFormSchema(needsAccountFor(accounts)), [accounts])
+  const [overrideNeeded, setOverrideNeeded] = useState(false)
 
   const {
     register,
     control,
     handleSubmit,
     setValue,
+    setError,
     formState: { errors },
   } = useForm<MarkPaidValues>({
     resolver: zodResolver(schema),
-    defaultValues: { method: 'GCash', paymentAccountId: defaultAccountId('GCash', accounts), reference: '', receivedAt: nowManilaInput() },
+    defaultValues: {
+      method: 'GCash',
+      paymentAccountId: defaultAccountId('GCash', accounts),
+      reference: '',
+      receivedAt: nowManilaInput(),
+      reason: '',
+      overrideCapacityReason: '',
+    },
   })
   const method = useWatch({ control, name: 'method' })
 
   const onSubmit = handleSubmit((values) => {
     if (mutation.isPending || pending.length === 0) return
+    const reasonErrors = markPaidReasonErrors(values, { costsSomething, overrideNeeded })
+    if (reasonErrors.reason) setError('reason', { type: 'required', message: reasonErrors.reason })
+    if (reasonErrors.overrideCapacityReason) setError('overrideCapacityReason', { type: 'required', message: reasonErrors.overrideCapacityReason })
+    if (reasonErrors.reason || reasonErrors.overrideCapacityReason) return
+    const body = toMarkPaidBody(values)
     mutation.mutate(
-      { ids: pending.map((t) => t.id), ...toMarkPaidBody(values) },
+      { ids: pending.map((t) => t.id), ...body, overrideCapacityReason: overrideNeeded ? body.overrideCapacityReason : undefined },
       {
         onSuccess: ({ updated }) => {
           toast({ tone: 'success', title: `${updated} marked paid. Ticket emails with QR codes sent.` })
           onDone()
         },
         onError: (e) => {
+          if (isApiError(e, 409) && e.code === 'capacity_exceeded') {
+            setOverrideNeeded(true)
+            return
+          }
           toast({ tone: 'error', title: 'Could not mark as paid.', description: errorMessage(e, { 409: 'Some registrations changed in the meantime. Refresh and try again.' }) })
         },
       },
@@ -122,6 +142,11 @@ function MarkPaidForm({
             {skipped} selected {skipped === 1 ? 'registration is' : 'registrations are'} not pending payment and will be skipped.
           </Alert>
         ) : null}
+        {overrideNeeded ? (
+          <Alert tone="yellow" live="alert">
+            {messageForCode('capacity_exceeded')}
+          </Alert>
+        ) : null}
         {accountsError ? <Alert tone="red">Could not load payment accounts. You can still record the payment.</Alert> : null}
         <MarkPaidFields
           method={method}
@@ -130,8 +155,22 @@ function MarkPaidForm({
             setValue('paymentAccountId', defaultAccountId(m, accounts))
           }}
           accounts={accounts}
-          fields={{ account: register('paymentAccountId'), reference: register('reference'), receivedAt: register('receivedAt') }}
-          errors={{ account: errors.paymentAccountId?.message, reference: errors.reference?.message, receivedAt: errors.receivedAt?.message }}
+          fields={{
+            account: register('paymentAccountId'),
+            reference: register('reference'),
+            receivedAt: register('receivedAt'),
+            reason: register('reason'),
+            overrideCapacityReason: register('overrideCapacityReason'),
+          }}
+          errors={{
+            account: errors.paymentAccountId?.message,
+            reference: errors.reference?.message,
+            receivedAt: errors.receivedAt?.message,
+            reason: errors.reason?.message,
+            overrideCapacityReason: errors.overrideCapacityReason?.message,
+          }}
+          compReasonRequired={costsSomething}
+          showOverride={overrideNeeded}
         />
       </form>
     </Dialog>

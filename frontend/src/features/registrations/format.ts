@@ -16,12 +16,16 @@ export const methodLabels: Record<PaymentMethod, string> = {
 }
 
 /** Two lines for the Payment column: what was used, and the reference (or where the proof stands). */
-export function paymentCell(r: Pick<RegistrationRow, 'method' | 'reference' | 'hasProof' | 'status'>): { primary: string; secondary: string } {
+export function paymentCell(
+  r: Pick<RegistrationRow, 'method' | 'reference' | 'proofReference' | 'hasProof' | 'status'>,
+): { primary: string; secondary: string } {
   if (r.method) {
     return { primary: methodLabels[r.method], secondary: r.reference ? `Ref ${r.reference}` : '—' }
   }
-  if (r.status === 'Cancelled') return { primary: '—', secondary: '' }
-  if (r.hasProof) return { primary: 'Proof uploaded', secondary: r.reference ? `Ref ${r.reference}` : '' }
+  // No payment yet: the registrant's own reference is shown as theirs, never as a confirmed one.
+  const fromRegistrant = r.proofReference ? `From registrant: ${r.proofReference}` : ''
+  if (r.status === 'Cancelled') return { primary: '—', secondary: fromRegistrant }
+  if (r.hasProof) return { primary: 'Proof uploaded', secondary: fromRegistrant }
   return { primary: 'Awaiting proof', secondary: '' }
 }
 

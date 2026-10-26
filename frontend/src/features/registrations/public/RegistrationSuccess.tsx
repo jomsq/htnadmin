@@ -1,8 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { Link } from 'react-router'
 import { Button } from '@/components/ui/Button'
 import { cardClass } from '@/components/ui/Card'
-import { buttonClass } from '@/components/ui/button-styles'
 import { CheckIcon } from '@/components/ui/icons'
 import { formatEventDateTime } from '@/features/events/format'
 import { cn } from '@/lib/cn'
@@ -70,11 +68,6 @@ export function RegistrationSuccess({ result, onAgain }: { result: RegistrationR
         </p>
       ) : null}
 
-      {!free && result.proofMode === 'Upload' && result.proofToken ? (
-        <Link to={`/pay/${encodeURIComponent(result.proofToken)}`} className={buttonClass('primary', 'lg', 'w-full')}>
-          Upload proof of payment
-        </Link>
-      ) : null}
       <Button variant="secondary" size="lg" onClick={onAgain}>
         Register someone else
       </Button>

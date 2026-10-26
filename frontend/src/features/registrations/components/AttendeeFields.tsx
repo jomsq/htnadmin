@@ -4,7 +4,7 @@ import { Field } from '@/components/ui/Field'
 import { Input, Select, type ControlSize } from '@/components/ui/Input'
 import { PrefixInput } from '@/components/ui/PrefixInput'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
-import type { FormOptions, RegistrationFormValues } from '../schemas'
+import { NAME_MAX, type FormOptions, type RegistrationFormValues } from '../schemas'
 
 type Props = {
   register: UseFormRegister<RegistrationFormValues>
@@ -25,13 +25,13 @@ export function BuyerFields({ register, control, errors, options, eventName, siz
   return (
     <>
       <Field label="First name" error={e?.firstName?.message}>
-        {(p) => <Input {...p} {...register('buyer.firstName')} controlSize={size} autoComplete="given-name" maxLength={60} />}
+        {(p) => <Input {...p} {...register('buyer.firstName')} controlSize={size} autoComplete="given-name" maxLength={NAME_MAX} />}
       </Field>
       <Field label="Middle name" optional error={e?.middleName?.message}>
-        {(p) => <Input {...p} {...register('buyer.middleName')} controlSize={size} autoComplete="additional-name" maxLength={60} />}
+        {(p) => <Input {...p} {...register('buyer.middleName')} controlSize={size} autoComplete="additional-name" maxLength={NAME_MAX} />}
       </Field>
       <Field label="Last name" error={e?.lastName?.message}>
-        {(p) => <Input {...p} {...register('buyer.lastName')} controlSize={size} autoComplete="family-name" maxLength={60} />}
+        {(p) => <Input {...p} {...register('buyer.lastName')} controlSize={size} autoComplete="family-name" maxLength={NAME_MAX} />}
       </Field>
       {options.genders.length ? (
         <Field label="Gender" error={e?.gender?.message}>
@@ -139,10 +139,10 @@ export function MemberCard({
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="First name" error={e?.firstName?.message}>
-          {(p) => <Input {...p} {...register(`members.${index}.firstName`)} controlSize={size} autoComplete="off" maxLength={60} />}
+          {(p) => <Input {...p} {...register(`members.${index}.firstName`)} controlSize={size} autoComplete="off" maxLength={NAME_MAX} />}
         </Field>
         <Field label="Last name" error={e?.lastName?.message}>
-          {(p) => <Input {...p} {...register(`members.${index}.lastName`)} controlSize={size} autoComplete="off" maxLength={60} />}
+          {(p) => <Input {...p} {...register(`members.${index}.lastName`)} controlSize={size} autoComplete="off" maxLength={NAME_MAX} />}
         </Field>
       </div>
       <Field label="Email address" error={e?.email?.message}>

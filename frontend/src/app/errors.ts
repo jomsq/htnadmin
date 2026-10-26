@@ -43,6 +43,7 @@ const codeMessages: Record<string, string> = {
   invalid_voucher: "This voucher code can't be used.",
   invalid_status: 'This registration changed in the meantime. Refresh and try again.',
   already_checked_in: "This attendee has already checked in, so the payment can't be reverted.",
+  capacity_exceeded: 'This event or ticket is full now. Add a reason to mark it paid anyway.',
   no_check_in: 'Only people who have checked in at an event can be Members.',
   proof_invalid: 'This upload link is invalid or has expired.',
 }

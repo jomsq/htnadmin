@@ -113,7 +113,7 @@ describe('Public registration', () => {
 
   it('shows the upload guidance on success and starts a fresh form for someone else', async () => {
     mockEvent()
-    const posts = mockSubmit(() => HttpResponse.json(result({ proofToken: 'tok123' }), { status: 201 }))
+    const posts = mockSubmit(() => HttpResponse.json(result(), { status: 201 }))
     const user = userEvent.setup()
     renderPage()
     await screen.findByRole('group', { name: 'Ticket' })
@@ -128,7 +128,8 @@ describe('Public registration', () => {
     expect(screen.getByText('HTN-7K3Q-9XWD').closest('dd')).toHaveClass('font-mono')
     expect(screen.getByText('₱1,500')).toBeInTheDocument()
     expect(screen.getByText('maria.santos@gmail.com')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Upload proof of payment' })).toHaveAttribute('href', '/pay/tok123')
+    // The upload link comes in the billing email only.
+    expect(screen.queryByRole('link', { name: 'Upload proof of payment' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Register someone else' }))
     expect(await screen.findByLabelText('First name')).toHaveValue('')
@@ -180,8 +181,9 @@ describe('Public registration', () => {
     expect(await within(cards[0]).findByText('Enter the first name.')).toBeInTheDocument()
     expect(posts).toHaveLength(0)
 
+    const teammates = ['Bea', 'Carl', 'Dani', 'Eli']
     for (const [i, card] of cards.entries()) {
-      await user.type(within(card).getByLabelText('First name'), `Dev${i + 2}`)
+      await user.type(within(card).getByLabelText('First name'), teammates[i])
       await user.type(within(card).getByLabelText('Last name'), 'Acme')
       await user.type(within(card).getByLabelText('Email address'), `dev${i + 2}@acmedev.ph`)
     }
@@ -191,7 +193,31 @@ describe('Public registration', () => {
     expect(screen.getByText('Participant IDs')).toBeInTheDocument()
     expect(posts[0].body.ticketTypeId).toBe('t3')
     expect(posts[0].body.attendees).toHaveLength(5)
-    expect(posts[0].body.attendees[4]).toEqual({ firstName: 'Dev5', lastName: 'Acme', email: 'dev5@acmedev.ph' })
+    expect(posts[0].body.attendees[4]).toEqual({ firstName: 'Eli', lastName: 'Acme', email: 'dev5@acmedev.ph' })
+  })
+
+  it('shows a duplicate group email on that teammate and does not submit', async () => {
+    mockEvent()
+    const posts = mockSubmit()
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('radio', { name: /Team of 5/ }))
+    await fillBuyer(user)
+    await user.click(screen.getByRole('button', { name: 'Continue · add 4 teammates' }))
+    const cards = await screen.findAllByRole('group', { name: /^Teammate \d of 4$/ })
+    const emails = ['bea@acmedev.ph', 'Maria.Santos@gmail.com', 'carl@acmedev.ph', 'dani@acmedev.ph']
+    for (const [i, card] of cards.entries()) {
+      await user.type(within(card).getByLabelText('First name'), ['Bea', 'Carl', 'Dani', 'Eli'][i])
+      await user.type(within(card).getByLabelText('Last name'), 'Acme')
+      await user.type(within(card).getByLabelText('Email address'), emails[i])
+    }
+    await user.click(screen.getByRole('checkbox', { name: /Data Privacy Act/ }))
+    await user.click(screen.getByRole('button', { name: 'Register & get billing details' }))
+    const message = 'Each person in the group needs their own email address.'
+    expect(await within(cards[1]).findByText(message)).toBeInTheDocument()
+    expect(within(cards[1]).getByLabelText('Email address')).toHaveAttribute('aria-invalid', 'true')
+    expect(within(cards[0]).queryByText(message)).not.toBeInTheDocument()
+    expect(posts).toHaveLength(0)
   })
 
   it('applies a voucher and shows the same generic message for any invalid code', async () => {

@@ -54,6 +54,9 @@ describe('Registrations', () => {
     const maria = within(table).getByRole('row', { name: /Maria Santos/ })
     expect(within(maria).getByText('HTN-7K3Q-9XWD')).toHaveClass('font-mono')
     expect(within(maria).getByText('Proof uploaded')).toBeInTheDocument()
+    // The registrant's own reference is labelled as theirs, not shown as a confirmed "Ref".
+    expect(within(maria).getByText('From registrant: 7741 0923')).toBeInTheDocument()
+    expect(within(maria).queryByText(/^Ref /)).not.toBeInTheDocument()
     expect(within(maria).getByText('₱1,500')).toHaveClass('tabular-nums')
     expect(within(maria).getByText('Pending payment')).toBeInTheDocument()
     expect(within(maria).getByText('Oct 25')).toBeInTheDocument()
@@ -61,6 +64,7 @@ describe('Registrations', () => {
     const juan = within(table).getByRole('row', { name: /Juan Dela Cruz/ })
     expect(within(juan).getByText('Awaiting proof')).toBeInTheDocument()
     expect(within(juan).getByText('Overdue')).toBeInTheDocument()
+    expect(within(juan).getByText('Seat released — payment deadline passed')).toBeInTheDocument()
 
     const team = within(table).getByRole('row', { name: /Acme Dev Team \(5\)/ })
     expect(within(team).getByText('+4 more')).toBeInTheDocument()
@@ -175,6 +179,7 @@ describe('Registrations', () => {
     const img = await within(drawer).findByRole('img', { name: 'Proof of payment uploaded by Maria Santos' })
     expect(img).toHaveAttribute('src', '/api/events/e1/registrations/r1/proof')
     expect(within(drawer).getByText('7741 0923')).toBeInTheDocument()
+    expect(within(drawer).getByText('Reference (from registrant)')).toBeInTheDocument()
     expect(within(drawer).getByText('Not paid yet.')).toBeInTheDocument()
     expect(within(drawer).getByText('Registered')).toBeInTheDocument()
     expect(within(drawer).getByRole('button', { name: 'Resend billing email' })).toBeInTheDocument()

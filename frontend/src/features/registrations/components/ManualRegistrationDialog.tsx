@@ -21,6 +21,7 @@ import {
   registrationFormSchema,
   resizeMembers,
   toAttendees,
+  markPaidReasonErrors,
   toMarkPaidBody,
   voucherOrUndefined,
   type FormOptions,
@@ -49,6 +50,7 @@ function ManualRegistrationForm({ event, options, onClose }: { event: EventDetai
   const tickets = manualTickets(event)
   const firstOpen = tickets.find((t) => t.sold < t.quantity) ?? tickets[0]
   const [formError, setFormError] = useState<string | null>(null)
+  const [overrideNeeded, setOverrideNeeded] = useState(false)
 
   const schema = useMemo(
     () => registrationFormSchema({ ...options, mode: 'manual', needsAccount: needsAccountFor(accounts) }),
@@ -93,14 +95,23 @@ function ManualRegistrationForm({ event, options, onClose }: { event: EventDetai
 
   const onSubmit = handleSubmit((values) => {
     if (mutation.isPending) return
+    if (values.markPaid) {
+      const picked = tickets.find((t) => t.id === values.ticketTypeId)
+      const reasonErrors = markPaidReasonErrors(values.payment, { costsSomething: (picked?.price ?? 0) > 0, overrideNeeded })
+      if (reasonErrors.reason) setError('payment.reason', { type: 'required', message: reasonErrors.reason })
+      if (reasonErrors.overrideCapacityReason) setError('payment.overrideCapacityReason', { type: 'required', message: reasonErrors.overrideCapacityReason })
+      if (reasonErrors.reason || reasonErrors.overrideCapacityReason) return
+    }
     setFormError(null)
+    const markPaidBody = values.markPaid ? toMarkPaidBody(values.payment) : undefined
+    if (markPaidBody && !overrideNeeded) markPaidBody.overrideCapacityReason = undefined
     mutation.mutate(
       {
         ticketTypeId: values.ticketTypeId,
         voucherCode: voucherOrUndefined(values.voucherCode),
         attendees: toAttendees(values),
         consent: true,
-        markPaid: values.markPaid ? toMarkPaidBody(values.payment) : undefined,
+        markPaid: markPaidBody,
       },
       {
         onSuccess: (result) => {
@@ -115,6 +126,11 @@ function ManualRegistrationForm({ event, options, onClose }: { event: EventDetai
           onClose()
         },
         onError: (e) => {
+          if (isApiError(e, 409) && e.code === 'capacity_exceeded' && values.markPaid) {
+            setOverrideNeeded(true)
+            setFormError(messageForCode('capacity_exceeded') ?? null)
+            return
+          }
           if (applyRegistrationFieldErrors(e, setError).length) return
           if (isApiError(e) && e.code === 'invalid_voucher') {
             setError('voucherCode', { type: 'server', message: messageForCode('invalid_voucher') })
@@ -215,12 +231,18 @@ function ManualRegistrationForm({ event, options, onClose }: { event: EventDetai
                 account: register('payment.paymentAccountId'),
                 reference: register('payment.reference'),
                 receivedAt: register('payment.receivedAt'),
+                reason: register('payment.reason'),
+                overrideCapacityReason: register('payment.overrideCapacityReason'),
               }}
               errors={{
                 account: errors.payment?.paymentAccountId?.message,
                 reference: errors.payment?.reference?.message,
                 receivedAt: errors.payment?.receivedAt?.message,
+                reason: errors.payment?.reason?.message,
+                overrideCapacityReason: errors.payment?.overrideCapacityReason?.message,
               }}
+              compReasonRequired={(ticket?.price ?? 0) > 0}
+              showOverride={overrideNeeded}
             />
           ) : null}
         </div>

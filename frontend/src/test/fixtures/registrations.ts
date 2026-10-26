@@ -12,6 +12,7 @@ export const row = (over: Record<string, unknown> = {}) => ({
   overdue: false,
   method: null,
   reference: null,
+  proofReference: null,
   hasProof: true,
   createdAt: '2026-10-25T02:00:00Z',
   source: 'Public',
@@ -19,7 +20,7 @@ export const row = (over: Record<string, unknown> = {}) => ({
 })
 
 export const rows = [
-  row(),
+  row({ proofReference: '7741 0923' }),
   row({ id: 'r2', buyerName: 'Juan Dela Cruz', buyerEmail: 'jdc@company.ph', participantIds: ['HTN-M2PA-4RCE'], hasProof: false, overdue: true }),
   row({
     id: 'r3',
