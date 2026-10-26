@@ -1,7 +1,7 @@
 import { screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { RequireAuth } from '@/app/auth/RequireAuth'
-import { boardMe, goonMe, signInAs } from '@/test/server'
+import { boardMe, boardWithout2faMe, goonMe, signInAs } from '@/test/server'
 import { renderRoutes } from '@/test/render'
 import { AppLayout } from './AppLayout'
 
@@ -43,7 +43,7 @@ describe('AppLayout', () => {
   })
 
   it('sends a board user without 2FA to /setup-2fa', async () => {
-    signInAs({ ...boardMe, twoFactorEnabled: false })
+    signInAs(boardWithout2faMe)
     renderShell('/people')
     expect(await screen.findByRole('heading', { name: 'Setup 2FA' })).toBeInTheDocument()
   })

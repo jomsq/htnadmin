@@ -9,7 +9,7 @@ import { Drawer } from '@/components/ui/Drawer'
 import { useToast } from '@/components/ui/toast-context'
 import { cn } from '@/lib/cn'
 import { formatDate, initials } from '@/lib/format'
-import { useDeactivatePersonMutation, useResendInviteMutation } from '../api'
+import { useDeactivatePersonMutation, useResendInviteMutation, useSendPasswordResetMutation } from '../api'
 import { fullName } from '../format'
 import type { Person } from '../schemas'
 import { LevelBadge } from './badges'
@@ -42,6 +42,7 @@ export function PersonDrawer({ person, onClose }: { person: Person | null; onClo
   const { toast } = useToast()
   const resend = useResendInviteMutation()
   const deactivate = useDeactivatePersonMutation()
+  const sendReset = useSendPasswordResetMutation()
   const [confirming, setConfirming] = useState(false)
 
   if (!person) return null
@@ -53,6 +54,14 @@ export function PersonDrawer({ person, onClose }: { person: Person | null; onClo
     resend.mutate(p.id, {
       onSuccess: () => toast({ tone: 'success', title: `Invite re-sent to ${p.email}.`, description: 'The new link expires in 48 hours.' }),
       onError: (e) => toast({ tone: 'error', title: 'Could not resend the invite.', description: errorMessage(e) }),
+    })
+  }
+
+  function onSendReset(p: Person) {
+    sendReset.mutate(p.id, {
+      onSuccess: () =>
+        toast({ tone: 'success', title: `Password reset link sent to ${p.email}.`, description: 'The link expires in 30 minutes.' }),
+      onError: (e) => toast({ tone: 'error', title: 'Could not send a password reset link.', description: errorMessage(e) }),
     })
   }
 
@@ -114,7 +123,11 @@ export function PersonDrawer({ person, onClose }: { person: Person | null; onClo
                   <Button variant="secondary" size="sm" loading={resend.isPending} onClick={() => onResend(person)}>
                     Resend invite
                   </Button>
-                ) : null}
+                ) : (
+                  <Button variant="secondary" size="sm" loading={sendReset.isPending} onClick={() => onSendReset(person)}>
+                    Send password reset link
+                  </Button>
+                )}
                 <Button variant="danger" size="sm" onClick={() => setConfirming(true)}>
                   Deactivate
                 </Button>

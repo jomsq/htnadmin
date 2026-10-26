@@ -69,7 +69,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const policies = me?.policies ?? []
   const items = navItems.filter((i) => !i.policy || policies.includes(i.policy))
   const name = me ? `${me.firstName} ${me.lastName}` : ''
-  const role = me ? (me.level === 'Board' ? (me.isCfo ? 'Board · CFO' : 'Board · Admin') : me.level) : ''
+  const role = me ? (me.level === 'Board' ? (me.isCfo ? 'Board · CFO' : 'Board · Admin') : (me.level ?? '')) : ''
 
   async function handleSignOut() {
     setSigningOut(true)

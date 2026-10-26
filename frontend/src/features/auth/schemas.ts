@@ -32,3 +32,12 @@ export const loginAcceptedSchema = z.object({ requires2fa: z.literal(true) })
 
 export const twoFactorSetupSchema = z.object({ sharedKey: z.string(), authenticatorUri: z.string() })
 export type TwoFactorSetup = z.infer<typeof twoFactorSetupSchema>
+
+export const inviteInfoSchema = z.object({
+  email: z.string(),
+  firstName: z.string(),
+  level: z.string(),
+  inviterName: z.string().nullish(),
+  expiresAt: z.string(),
+})
+export type InviteInfo = z.infer<typeof inviteInfoSchema>

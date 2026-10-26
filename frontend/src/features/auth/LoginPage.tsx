@@ -14,10 +14,10 @@ import { safeNext } from '@/lib/format'
 import { useLoginMutation, useLoginTwoFactorMutation } from './api'
 import { codeSchema, loginSchema, type CodeValues, type LoginValues } from './schemas'
 
-type Step = 'signin' | 'code'
+type Step = { kind: 'signin' } | { kind: 'code'; rememberMe: boolean }
 
 export function LoginPage() {
-  const [step, setStep] = useState<Step>('signin')
+  const [step, setStep] = useState<Step>({ kind: 'signin' })
   const [params] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -27,13 +27,13 @@ export function LoginPage() {
 
   function finish(me: Me) {
     signedIn(me)
-    navigate(me.twoFactorRequired && !me.twoFactorEnabled ? '/setup-2fa' : next, { replace: true })
+    navigate(me.twoFactorRequired ? '/setup-2fa' : next, { replace: true })
   }
 
-  if (step === 'code') {
+  if (step.kind === 'code') {
     return (
       <AuthLayout title="Enter your code" subtitle="Open your authenticator app and enter the 6-digit code for HTN Admin.">
-        <CodeStep onDone={finish} onBack={() => setStep('signin')} />
+        <CodeStep rememberMe={step.rememberMe} onDone={finish} onBack={() => setStep({ kind: 'signin' })} />
       </AuthLayout>
     )
   }
@@ -45,12 +45,12 @@ export function LoginPage() {
           {notice}
         </Alert>
       ) : null}
-      <SignInStep onDone={finish} onTwoFactor={() => setStep('code')} />
+      <SignInStep onDone={finish} onTwoFactor={(rememberMe) => setStep({ kind: 'code', rememberMe })} />
     </AuthLayout>
   )
 }
 
-function SignInStep({ onDone, onTwoFactor }: { onDone: (me: Me) => void; onTwoFactor: () => void }) {
+function SignInStep({ onDone, onTwoFactor }: { onDone: (me: Me) => void; onTwoFactor: (rememberMe: boolean) => void }) {
   const mutation = useLoginMutation()
   const {
     register,
@@ -61,7 +61,7 @@ function SignInStep({ onDone, onTwoFactor }: { onDone: (me: Me) => void; onTwoFa
   const onSubmit = handleSubmit((values) => {
     if (mutation.isPending) return
     mutation.mutate(values, {
-      onSuccess: (result) => (result.kind === 'twoFactor' ? onTwoFactor() : onDone(result.me)),
+      onSuccess: (result) => (result.kind === 'twoFactor' ? onTwoFactor(values.rememberMe) : onDone(result.me)),
     })
   })
 
@@ -97,7 +97,7 @@ function SignInStep({ onDone, onTwoFactor }: { onDone: (me: Me) => void; onTwoFa
   )
 }
 
-function CodeStep({ onDone, onBack }: { onDone: (me: Me) => void; onBack: () => void }) {
+function CodeStep({ rememberMe, onDone, onBack }: { rememberMe: boolean; onDone: (me: Me) => void; onBack: () => void }) {
   const mutation = useLoginTwoFactorMutation()
   const {
     register,
@@ -107,7 +107,7 @@ function CodeStep({ onDone, onBack }: { onDone: (me: Me) => void; onBack: () => 
 
   const onSubmit = handleSubmit((values) => {
     if (mutation.isPending) return
-    mutation.mutate(values, { onSuccess: onDone })
+    mutation.mutate({ code: values.code, rememberMe }, { onSuccess: onDone })
   })
 
   return (

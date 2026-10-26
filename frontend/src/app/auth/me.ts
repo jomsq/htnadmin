@@ -7,13 +7,15 @@ export type StaffLevel = z.infer<typeof staffLevelSchema>
 
 export const meSchema = z.object({
   id: z.string(),
-  personId: z.string(),
+  /** Null for a login without a roster record (e.g. a bootstrap admin). */
+  personId: z.string().nullable(),
   firstName: z.string(),
   lastName: z.string(),
   email: z.string(),
-  level: staffLevelSchema,
+  level: staffLevelSchema.nullable(),
   isCfo: z.boolean(),
   twoFactorEnabled: z.boolean(),
+  /** True only while the board 2FA gate applies (board account without 2FA). */
   twoFactorRequired: z.boolean(),
   policies: z.array(z.string()),
   preferences: preferencesSchema,

@@ -1,11 +1,38 @@
 import { isApiError } from './api'
 
-/** Human message for a failed request; `byStatus` overrides per HTTP status. */
+export const RATE_LIMITED_MESSAGE = 'Too many attempts. Please wait a minute and try again.'
+export const INVITE_INVALID_MESSAGE = 'This invite link is invalid or has expired. Ask an admin to resend it.'
+export const RESET_INVALID_MESSAGE = 'This reset link is invalid or has expired.'
+
+/** Human messages for the `code` extension the API puts on ProblemDetails. */
+const codeMessages: Record<string, string> = {
+  rate_limited: RATE_LIMITED_MESSAGE,
+  invite_invalid: INVITE_INVALID_MESSAGE,
+  reset_invalid: RESET_INVALID_MESSAGE,
+  antiforgery: 'Your session security token expired. Refresh the page and try again.',
+  already_active: 'This account is already active, so there is no invite to resend. Send a password reset link instead.',
+  no_login: 'This person has no login. Members are roster only.',
+  not_active: "This account isn't active yet. Resend the invite instead.",
+  person_deactivated: 'This person is deactivated.',
+  self_deactivate: "You can't deactivate your own account.",
+  '2fa_already_enabled': 'Two-step verification is already on.',
+}
+
+/** Message for a known API error code, if any. */
+export function messageForCode(code: string | undefined): string | undefined {
+  return code ? codeMessages[code] : undefined
+}
+
+/**
+ * Human message for a failed request. Known `code`s win; then `byStatus` overrides; then defaults.
+ */
 export function errorMessage(error: unknown, byStatus: Partial<Record<number, string>> = {}): string {
   if (isApiError(error)) {
+    const byCode = messageForCode(error.code)
+    if (byCode) return byCode
+    if (error.status === 429) return RATE_LIMITED_MESSAGE
     const override = byStatus[error.status]
     if (override) return override
-    if (error.status === 429) return 'Too many attempts. Wait a minute and try again.'
     if (error.status === 403) return 'You do not have access to do that.'
     if (error.status >= 500) return 'Something went wrong on our side. Try again in a moment.'
     return error.problem.detail ?? error.problem.title ?? 'The request could not be completed.'

@@ -13,7 +13,8 @@ export const boardMe: Me = {
   level: 'Board',
   isCfo: false,
   twoFactorEnabled: true,
-  twoFactorRequired: true,
+  // The server sends true only while the board 2FA gate applies.
+  twoFactorRequired: false,
   policies: ['People.View', 'People.Manage', 'Settings.Personal', 'Finance.View'],
   preferences: { mode: 'system', textSize: 'default', density: 'comfortable' },
 }
@@ -37,6 +38,14 @@ export const defaultHandlers = [
 ]
 
 export const server = setupServer(...defaultHandlers)
+
+/** A board account that has not turned on 2FA yet: the server gate applies. */
+export const boardWithout2faMe: Me = { ...boardMe, twoFactorEnabled: false, twoFactorRequired: true }
+
+/** ProblemDetails as the API writes it (code in the extensions). */
+export function problem(status: number, title: string, code?: string, extra: Record<string, unknown> = {}) {
+  return HttpResponse.json({ status, title, ...(code ? { code } : {}), ...extra }, { status })
+}
 
 /** Make /api/auth/me return this user. */
 export function signInAs(me: Me) {

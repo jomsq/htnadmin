@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
-import { boardMe, goonMe, server, signInAs } from '@/test/server'
+import { boardMe, goonMe, problem, server, signInAs } from '@/test/server'
 import { renderWithProviders } from '@/test/render'
 import { PeoplePage } from './PeoplePage'
 
@@ -77,6 +77,81 @@ describe('PeoplePage', () => {
     expect(within(drawer).queryByRole('button', { name: 'Resend invite' })).not.toBeInTheDocument()
     expect(within(drawer).queryByRole('button', { name: 'Deactivate' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ Create account' })).not.toBeInTheDocument()
+  })
+
+  it('hides "Send password reset link" without People.Manage', async () => {
+    signInAs(goonMe)
+    mockPeople()
+    const user = userEvent.setup()
+    renderWithProviders(<PeoplePage />)
+    await user.click(await screen.findByRole('button', { name: /Alex Reyes/ }))
+    const drawer = await screen.findByRole('dialog', { name: 'Person details' })
+    expect(within(drawer).getByText(/Active · last sign-in/)).toBeInTheDocument()
+    expect(within(drawer).queryByRole('button', { name: 'Send password reset link' })).not.toBeInTheDocument()
+  })
+
+  it('offers "Send password reset link" only for Active accounts', async () => {
+    signInAs(boardMe)
+    mockPeople()
+    const user = userEvent.setup()
+    renderWithProviders(<PeoplePage />)
+    await user.click(await screen.findByRole('button', { name: /Ana Bautista/ }))
+    let drawer = await screen.findByRole('dialog', { name: 'Person details' })
+    expect(within(drawer).getByRole('button', { name: 'Resend invite' })).toBeInTheDocument()
+    expect(within(drawer).queryByRole('button', { name: 'Send password reset link' })).not.toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await user.click(await screen.findByRole('button', { name: /Alex Reyes/ }))
+    drawer = await screen.findByRole('dialog', { name: 'Person details' })
+    expect(within(drawer).getByRole('button', { name: 'Send password reset link' })).toBeInTheDocument()
+    expect(within(drawer).queryByRole('button', { name: 'Resend invite' })).not.toBeInTheDocument()
+  })
+
+  it('sends a password reset link from the drawer', async () => {
+    signInAs(boardMe)
+    mockPeople()
+    let sent = ''
+    server.use(
+      http.post('/api/people/:id/send-password-reset', ({ params }) => {
+        sent = String(params.id)
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<PeoplePage />)
+    await user.click(await screen.findByRole('button', { name: /Alex Reyes/ }))
+    const drawer = await screen.findByRole('dialog', { name: 'Person details' })
+    await user.click(within(drawer).getByRole('button', { name: 'Send password reset link' }))
+    expect(await screen.findByText('Password reset link sent to alex@hackthenorth.ph.')).toBeInTheDocument()
+    expect(sent).toBe('p1')
+  })
+
+  it('shows the 409 reason in a toast', async () => {
+    signInAs(boardMe)
+    mockPeople()
+    server.use(
+      http.post('/api/people/:id/send-password-reset', () =>
+        problem(409, "This account isn't active yet. Resend the invite instead.", 'not_active'),
+      ),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<PeoplePage />)
+    await user.click(await screen.findByRole('button', { name: /Alex Reyes/ }))
+    const drawer = await screen.findByRole('dialog', { name: 'Person details' })
+    await user.click(within(drawer).getByRole('button', { name: 'Send password reset link' }))
+    expect(await screen.findByText('Could not send a password reset link.')).toBeInTheDocument()
+    expect(screen.getByText("This account isn't active yet. Resend the invite instead.")).toBeInTheDocument()
+  })
+
+  it('explains self_deactivate', async () => {
+    signInAs(boardMe)
+    mockPeople()
+    server.use(http.post('/api/people/:id/deactivate', () => problem(409, "You can't deactivate your own account.", 'self_deactivate')))
+    const user = userEvent.setup()
+    renderWithProviders(<PeoplePage />)
+    await user.click(await screen.findByRole('button', { name: /Alex Reyes/ }))
+    await user.click(within(await screen.findByRole('dialog', { name: 'Person details' })).getByRole('button', { name: 'Deactivate' }))
+    await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Deactivate account' }))
+    expect(await screen.findByText("You can't deactivate your own account.")).toBeInTheDocument()
   })
 
   it('filters by level through the API', async () => {

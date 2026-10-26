@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { api, apiRequest, apiVoid } from '@/app/api'
+import { api, apiRequest, apiVoid, isApiError } from '@/app/api'
 import { meSchema, type Me } from '@/app/auth/me'
-import { loginAcceptedSchema, twoFactorSetupSchema } from './schemas'
+import { inviteInfoSchema, loginAcceptedSchema, twoFactorSetupSchema, type InviteInfo } from './schemas'
 
 export type LoginResult = { kind: 'signedIn'; me: Me } | { kind: 'twoFactor' }
 
@@ -17,7 +17,8 @@ export function useLoginMutation() {
 
 export function useLoginTwoFactorMutation() {
   return useMutation({
-    mutationFn: (body: { code: string }) => api('/api/auth/login/2fa', meSchema, { method: 'POST', body }),
+    // The server can't carry rememberMe across the two steps, so send it again with the code.
+    mutationFn: (body: { code: string; rememberMe: boolean }) => api('/api/auth/login/2fa', meSchema, { method: 'POST', body }),
   })
 }
 
@@ -29,8 +30,29 @@ export function useForgotPasswordMutation() {
 
 export function useResetPasswordMutation() {
   return useMutation({
-    mutationFn: (body: { token: string; email: string; password: string }) =>
+    /** `email` is optional: the token alone identifies the account. */
+    mutationFn: (body: { token: string; email?: string; password: string }) =>
       apiVoid('/api/auth/password/reset', { method: 'POST', body }),
+  })
+}
+
+/** Invite details for /invite/:token, or null when the link is invalid, used or expired (404). */
+export async function fetchInvite(token: string): Promise<InviteInfo | null> {
+  try {
+    return await api(`/api/auth/invite/${encodeURIComponent(token)}`, inviteInfoSchema)
+  } catch (e) {
+    if (isApiError(e, 404)) return null
+    throw e
+  }
+}
+
+export function useInviteQuery(token: string) {
+  return useQuery({
+    queryKey: ['auth', 'invite', token],
+    queryFn: () => fetchInvite(token),
+    enabled: token.length > 0,
+    retry: false,
+    staleTime: Infinity,
   })
 }
 

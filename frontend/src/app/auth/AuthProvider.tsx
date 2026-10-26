@@ -23,7 +23,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signedIn = useCallback(
     (user: Me) => {
-      resetCsrfToken()
+      resetCsrfToken() // api() already drops it after login; keep this for callers outside api()
       setTwoFactorPending(false)
       queryClient.setQueryData(meQueryKey, user)
     },
@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       me,
       status: meQuery.isPending ? 'loading' : meQuery.isError ? 'error' : 'ready',
       error: meQuery.error,
-      needsTwoFactorSetup: twoFactorPending || (!!me && me.twoFactorRequired && !me.twoFactorEnabled),
+      needsTwoFactorSetup: twoFactorPending || (!!me && me.twoFactorRequired),
       retry: () => void refetch(),
       signedIn,
       twoFactorEnabled,

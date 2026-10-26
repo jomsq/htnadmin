@@ -1,6 +1,7 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useLocation, useNavigate } from 'react-router'
+import { isApiError } from '@/app/api'
 import { useAuth } from '@/app/auth/auth-context'
 import { errorMessage } from '@/app/errors'
 import { AuthLayout } from '@/app/layouts/AuthLayout'
@@ -29,14 +30,17 @@ export function SetupTwoFactorPage() {
     formState: { errors },
   } = useForm<CodeValues>({ resolver: zodResolver(codeSchema), defaultValues: { code: '' } })
 
+  async function proceed() {
+    await twoFactorEnabled()
+    navigate(next, { replace: true })
+  }
+
+  // 409: two-step verification is already on (e.g. enabled in another tab).
+  const alreadyOn = (e: unknown) => isApiError(e, 409) && e.code === '2fa_already_enabled'
+
   const onSubmit = handleSubmit((v) => {
     if (enable.isPending) return
-    enable.mutate(v, {
-      onSuccess: async () => {
-        await twoFactorEnabled()
-        navigate(next, { replace: true })
-      },
-    })
+    enable.mutate(v, { onSuccess: proceed })
   })
 
   async function handleSignOut() {
@@ -59,7 +63,21 @@ export function SetupTwoFactorPage() {
               <Skeleton className="h-5 w-56" />
             </div>
           ) : setup.isError ? (
-            <Alert tone="red" live="alert" action={<Button variant="secondary" size="sm" onClick={() => void setup.refetch()}>Try again</Button>}>
+            <Alert
+              tone={alreadyOn(setup.error) ? 'green' : 'red'}
+              live="alert"
+              action={
+                alreadyOn(setup.error) ? (
+                  <Button variant="secondary" size="sm" onClick={() => void proceed()}>
+                    Continue
+                  </Button>
+                ) : (
+                  <Button variant="secondary" size="sm" onClick={() => void setup.refetch()}>
+                    Try again
+                  </Button>
+                )
+              }
+            >
               {errorMessage(setup.error)}
             </Alert>
           ) : (
@@ -76,7 +94,17 @@ export function SetupTwoFactorPage() {
           <span className="font-medium text-gray-900 dark:text-gray-50">2. Enter the 6-digit code it shows</span>
           <form noValidate onSubmit={onSubmit} className="flex flex-col gap-[18px]">
             {enable.isError ? (
-              <Alert tone="red" live="alert">
+              <Alert
+                tone={alreadyOn(enable.error) ? 'green' : 'red'}
+                live="alert"
+                action={
+                  alreadyOn(enable.error) ? (
+                    <Button variant="secondary" size="sm" onClick={() => void proceed()}>
+                      Continue
+                    </Button>
+                  ) : undefined
+                }
+              >
                 {errorMessage(enable.error, { 400: 'That code did not work. Check your app and try again.' })}
               </Alert>
             ) : null}

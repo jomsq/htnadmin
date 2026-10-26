@@ -2,7 +2,6 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Link } from 'react-router'
 import { errorMessage } from '@/app/errors'
-import { isApiError } from '@/app/api'
 import { AuthLayout } from '@/app/layouts/AuthLayout'
 import { Alert } from '@/components/ui/Alert'
 import { Button } from '@/components/ui/Button'
@@ -22,9 +21,9 @@ export function ForgotPasswordPage() {
     formState: { errors },
   } = useForm<ForgotValues>({ resolver: zodResolver(forgotSchema), defaultValues: { email: '' } })
 
-  // The response never reveals whether the email exists; only rate limits / outages surface.
-  const failed = mutation.isError && (!isApiError(mutation.error) || mutation.error.status === 429 || mutation.error.status >= 500)
-  const sent = mutation.isSuccess || (mutation.isError && !failed)
+  // The server answers 202 whether or not the email exists; only rate limits, token or network problems fail.
+  const failed = mutation.isError
+  const sent = mutation.isSuccess
 
   if (sent) {
     return (

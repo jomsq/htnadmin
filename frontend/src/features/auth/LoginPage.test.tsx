@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { RedirectIfSignedIn } from '@/app/auth/RequireAuth'
-import { boardMe, server } from '@/test/server'
+import { boardMe, boardWithout2faMe, problem, server } from '@/test/server'
 import { renderRoutes } from '@/test/render'
 import { LoginPage } from './LoginPage'
 
@@ -96,7 +96,7 @@ describe('LoginPage', () => {
     await user.type(screen.getByLabelText('Authentication code'), '123456')
     await user.click(screen.getByRole('button', { name: 'Verify' }))
     expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument()
-    expect(code).toEqual({ code: '123456' })
+    expect(code).toEqual({ code: '123456', rememberMe: false })
   })
 
   it('shows an error when the 2FA code is rejected', async () => {
@@ -112,9 +112,42 @@ describe('LoginPage', () => {
   })
 
   it('sends a board user without 2FA to /setup-2fa', async () => {
-    server.use(http.post('/api/auth/login', () => HttpResponse.json({ ...boardMe, twoFactorEnabled: false })))
+    server.use(http.post('/api/auth/login', () => HttpResponse.json(boardWithout2faMe)))
     renderLogin()
     await fillAndSubmit()
     expect(await screen.findByRole('heading', { name: 'Setup 2FA' })).toBeInTheDocument()
+  })
+
+  it('sends rememberMe again with the 2FA code', async () => {
+    let first: unknown
+    let second: unknown
+    server.use(
+      http.post('/api/auth/login', async ({ request }) => {
+        first = await request.json()
+        return HttpResponse.json({ requires2fa: true }, { status: 202 })
+      }),
+      http.post('/api/auth/login/2fa', async ({ request }) => {
+        second = await request.json()
+        return HttpResponse.json(boardMe)
+      }),
+    )
+    renderLogin()
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Email'), 'alex@hackthenorth.ph')
+    await user.type(screen.getByLabelText('Password'), 'correct horse battery')
+    await user.click(screen.getByLabelText('Keep me signed in on this device'))
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+    await user.type(await screen.findByLabelText('Authentication code'), '123456')
+    await user.click(screen.getByRole('button', { name: 'Verify' }))
+    expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument()
+    expect(first).toEqual({ email: 'alex@hackthenorth.ph', password: 'correct horse battery', rememberMe: true })
+    expect(second).toEqual({ code: '123456', rememberMe: true })
+  })
+
+  it('shows the rate-limit message on 429', async () => {
+    server.use(http.post('/api/auth/login', () => problem(429, 'Too many attempts', 'rate_limited')))
+    renderLogin()
+    await fillAndSubmit()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Too many attempts. Please wait a minute and try again.')
   })
 })

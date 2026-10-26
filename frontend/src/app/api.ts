@@ -103,10 +103,21 @@ export function resetCsrfToken(): void {
   csrfPromise = null
 }
 
+/** The API answers 400 ProblemDetails with `code: "antiforgery"` when the token is missing, stale or bound to another user. */
 function isAntiforgeryFailure(status: number, problem: ProblemDetails): boolean {
-  if (status !== 400) return false
-  const text = `${problem.code ?? ''} ${problem.title ?? ''} ${problem.detail ?? ''}`
-  return /antiforgery|csrf/i.test(text)
+  return status === 400 && problem.code === 'antiforgery'
+}
+
+/**
+ * ASP.NET antiforgery tokens are bound to the signed-in user, so the cached token is stale once
+ * one of these calls succeeds. Login only counts when it signs in (200); a 202 two-step challenge
+ * leaves the caller anonymous.
+ */
+const USER_CHANGING_PATHS = ['/api/auth/login/2fa', '/api/auth/invite/accept', '/api/auth/logout']
+
+function changesUser(path: string, status: number): boolean {
+  if (path === '/api/auth/login') return status === 200
+  return USER_CHANGING_PATHS.includes(path)
 }
 
 // ---- Core request -----------------------------------------------------------
@@ -163,9 +174,14 @@ export async function apiRequest(path: string, options: ApiOptions = {}, retried
     signal: options.signal,
   })
 
-  if (res.ok) return { status: res.status, data: await readBody(res) }
+  if (res.ok) {
+    if (method !== 'GET' && changesUser(path, res.status)) resetCsrfToken()
+    return { status: res.status, data: await readBody(res) }
+  }
 
   const problem = await readProblem(res)
+
+  if (path === '/api/auth/logout') resetCsrfToken() // signed out or not, start fresh
 
   if (!retried && method !== 'GET' && isAntiforgeryFailure(res.status, problem)) {
     await getCsrfToken(true)

@@ -7,16 +7,23 @@ import { buttonClass } from '@/components/ui/button-styles'
 import { useResetPasswordMutation } from './api'
 import { NewPasswordForm } from './NewPasswordForm'
 
+const requestNewLink = (
+  <Link to="/forgot" className="font-medium text-red-800 underline dark:text-red-200">
+    Request a new link
+  </Link>
+)
+
 export function ResetPasswordPage() {
   const { token = '' } = useParams()
   const [params] = useSearchParams()
-  const email = params.get('email') ?? ''
+  // The emailed link is {base}/reset/{token}; an ?email= hint is optional and only double-checked by the server.
+  const email = params.get('email')?.trim() || undefined
   const navigate = useNavigate()
   const mutation = useResetPasswordMutation()
-  const fieldErrors = isApiError(mutation.error, 400) ? mutation.error.fieldErrors : {}
-  const passwordError = fieldErrors.password
+  const passwordError = isApiError(mutation.error, 400) ? mutation.error.fieldErrors.password : undefined
+  const invalidLink = isApiError(mutation.error) && mutation.error.code === 'reset_invalid'
 
-  if (!email || !token) {
+  if (!token) {
     return (
       <AuthLayout title="Reset your password">
         <Alert tone="red" live="alert">
@@ -30,7 +37,10 @@ export function ResetPasswordPage() {
   }
 
   return (
-    <AuthLayout title="Set a new password" subtitle={`For ${email}. The link expires 30 minutes after it was sent.`}>
+    <AuthLayout
+      title="Set a new password"
+      subtitle={email ? `For ${email}. The link expires 30 minutes after it was sent.` : 'The link expires 30 minutes after it was sent.'}
+    >
       <NewPasswordForm
         passwordLabel="New password"
         submitLabel="Set new password"
@@ -38,22 +48,14 @@ export function ResetPasswordPage() {
         serverPasswordError={passwordError}
         before={
           mutation.isError && !passwordError ? (
-            <Alert
-              tone="red"
-              live="alert"
-              action={
-                <Link to="/forgot" className="font-medium text-red-800 underline dark:text-red-200">
-                  Request a new link
-                </Link>
-              }
-            >
-              {errorMessage(mutation.error, { 400: 'This reset link is invalid or has expired.' })}
+            <Alert tone="red" live="alert" action={invalidLink ? requestNewLink : undefined}>
+              {errorMessage(mutation.error)}
             </Alert>
           ) : null
         }
         onSubmit={(password) =>
           mutation.mutate(
-            { token, email, password },
+            { token, password, ...(email ? { email } : {}) },
             {
               onSuccess: () =>
                 navigate('/login', { replace: true, state: { notice: 'Password updated. Sign in with your new password.' } }),

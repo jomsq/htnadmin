@@ -49,3 +49,10 @@ export function useDeactivatePersonMutation() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKeys.all }),
   })
 }
+
+/** Emails an Active account a fresh reset link (expires in 30 minutes). 409 for no login / not active / deactivated. */
+export function useSendPasswordResetMutation() {
+  return useMutation({
+    mutationFn: (id: string) => apiVoid(`/api/people/${encodeURIComponent(id)}/send-password-reset`, { method: 'POST' }),
+  })
+}

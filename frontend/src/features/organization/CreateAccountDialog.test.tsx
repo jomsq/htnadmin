@@ -85,7 +85,7 @@ describe('CreateAccountDialog', () => {
     server.use(
       http.post('/api/people', () =>
         HttpResponse.json(
-          { title: 'One or more validation errors occurred.', status: 400, errors: { Email: ['This email is already in use.'] } },
+          { title: 'One or more validation errors occurred.', status: 400, errors: { email: ['Someone with this email is already in the organization.'] } },
           { status: 400 },
         ),
       ),
@@ -96,7 +96,7 @@ describe('CreateAccountDialog', () => {
     await user.type(within(dialog).getByLabelText('Last name'), 'Bautista')
     await user.type(within(dialog).getByLabelText('Email'), 'ana.b@gmail.com')
     await user.click(within(dialog).getByRole('button', { name: 'Create & send invite' }))
-    expect(await within(dialog).findByText('This email is already in use.')).toBeInTheDocument()
+    expect(await within(dialog).findByText('Someone with this email is already in the organization.')).toBeInTheDocument()
     expect(within(dialog).getByLabelText('Email')).toHaveAttribute('aria-invalid', 'true')
   })
 })
