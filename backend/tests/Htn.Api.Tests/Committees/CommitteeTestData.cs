@@ -1,10 +1,7 @@
 using System.Net;
 using System.Text.Json;
-using Htn.Api.Features.Committees;
 using Htn.Api.Tests.Infrastructure;
 using Htn.Domain.Organization;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Htn.Api.Tests.Committees;
 
@@ -65,31 +62,4 @@ internal static class CommitteeTestData
 
     public static List<Guid> MemberIds(this JsonElement committee) =>
         committee.GetProperty("members").EnumerateArray().Select(m => m.GetProperty("personId").GetGuid()).ToList();
-}
-
-/// <summary>
-/// Stand-in for the open-task counts that slice 4B will supply, so the "a committee with open tasks can't be
-/// deactivated" guard can be tested before tasks exist.
-/// </summary>
-internal sealed class StubOpenTasks : ICommitteeOpenTasks
-{
-    public Dictionary<Guid, int> Counts { get; } = [];
-
-    public Task<IReadOnlyDictionary<Guid, int>> ForEventAsync(Guid eventId, CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyDictionary<Guid, int>>(Counts);
-
-    public Task<int> ForCommitteeAsync(Guid committeeId, CancellationToken ct = default) =>
-        Task.FromResult(Counts.TryGetValue(committeeId, out var n) ? n : 0);
-}
-
-/// <summary>Host whose open-task counts can be set by the test (see <see cref="StubOpenTasks"/>).</summary>
-public sealed class OpenTasksApiFactory : HtnApiFactory
-{
-    internal StubOpenTasks OpenTasks { get; } = new();
-
-    protected override void ConfigureTestOverrides(IServiceCollection services)
-    {
-        services.RemoveAll<ICommitteeOpenTasks>();
-        services.AddSingleton<ICommitteeOpenTasks>(OpenTasks);
-    }
 }

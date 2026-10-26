@@ -38,21 +38,13 @@ public sealed record TaskScope(Guid TaskId);
 public sealed record TaskScopeInfo(Guid TaskId, Guid CommitteeId, Guid EventId, bool IsCallerAssignee);
 
 /// <summary>
-/// Maps a task id to its committee, event and the caller's assignment. Slice 4A has no tasks, so the registered
-/// implementation is <see cref="NoTasksYetScopeResolver"/> and every <see cref="TaskScope"/> check fails closed.
-/// Slice 4B registers a resolver over the <c>tasks</c> / <c>task_assignees</c> tables and nothing else changes.
+/// Maps a task id to its committee, event and the caller's assignment. Implemented by
+/// <c>Features.Tasks.TaskScopeResolver</c> over the <c>tasks</c> / <c>task_assignees</c> tables (slice 4B); an unknown
+/// task resolves to null, so a <see cref="TaskScope"/> check fails closed.
 /// </summary>
 public interface ITaskScopeResolver
 {
     Task<TaskScopeInfo?> ResolveAsync(Guid taskId, CancellationToken ct = default);
-}
-
-/// <summary>Slice 4A placeholder: tasks don't exist yet, so a task-scoped check can never succeed.</summary>
-public sealed class NoTasksYetScopeResolver : ITaskScopeResolver
-{
-    // TODO(4B): replace this registration with a resolver that reads the task's committee/event and the caller's
-    // assignee rows. Nothing in Policies.cs or CommitteeScopedHandler needs to change.
-    public Task<TaskScopeInfo?> ResolveAsync(Guid taskId, CancellationToken ct = default) => Task.FromResult<TaskScopeInfo?>(null);
 }
 
 /// <summary>
@@ -61,7 +53,8 @@ public sealed class NoTasksYetScopeResolver : ITaskScopeResolver
 /// <list type="bullet">
 /// <item><see cref="CommitteeScope"/> — the lead of that committee (manage) or anyone on it (work/view).</item>
 /// <item><see cref="EventScope"/> — a lead on that event (manage) or anyone on a committee of it (work/view).</item>
-/// <item><see cref="TaskScope"/> — resolved through <see cref="ITaskScopeResolver"/> (4B).</item>
+/// <item><see cref="TaskScope"/> — resolved through <see cref="ITaskScopeResolver"/>: the lead of the task's
+/// committee (manage), an assignee or that lead (work), anyone on a committee of its event (view).</item>
 /// <item><b>Anything else</b> — no resource (<c>/api/auth/me</c>) or the <c>HttpContext</c> that endpoint routing
 /// passes for <c>.RequireAuthorization(...)</c>: <b>"may be allowed"</b>, i.e. the caller leads something (manage) or
 /// is on something (work/view). That is the coarse gate; the endpoint must then check the real resource, and the

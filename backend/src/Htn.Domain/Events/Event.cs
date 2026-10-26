@@ -59,6 +59,19 @@ public sealed class Event
     public Guid? UpdatedById { get; private set; }
     public DateTimeOffset? PublishedAt { get; private set; }
 
+    /// <summary>
+    /// Number of task references handed out for this event. Task references are <c>HTN-&lt;counter&gt;</c>, so the
+    /// counter is bumped by <see cref="NextTaskNumber"/> under the event row lock (the event row is locked first,
+    /// always) and never reused.
+    /// </summary>
+    public int TaskCounter { get; private set; }
+
+    /// <summary>
+    /// Hands out the next per-event task number. Call it only while holding the event row lock (see
+    /// <c>EventLock</c>), so two people creating a task at the same time can't get the same number.
+    /// </summary>
+    public int NextTaskNumber() => ++TaskCounter;
+
     public static Event Create(
         string name, string slug, DateTimeOffset startsAt, DateTimeOffset endsAt, string venue, int capacity, string? description,
         DateTimeOffset at, Guid? actorId)

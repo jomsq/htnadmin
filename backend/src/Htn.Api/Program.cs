@@ -8,6 +8,7 @@ using Htn.Api.Features.Events;
 using Htn.Api.Features.Organization;
 using Htn.Api.Features.Registrations;
 using Htn.Api.Features.Settings;
+using Htn.Api.Features.Tasks;
 using Htn.Api.Hosting;
 using Htn.Api.Seeding;
 using Htn.Infrastructure;
@@ -122,9 +123,9 @@ builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 // Committees.ManageMembers, Tasks.Manage, Tasks.Work and Tasks.ViewBoard.
 builder.Services.AddScoped<ICommitteeContext, CommitteeContext>();
 builder.Services.AddScoped<IAuthorizationHandler, CommitteeScopedHandler>();
-// Slice 4A has no tasks: task-scoped checks fail closed and open-task counts are 0. Slice 4B replaces both.
-builder.Services.AddScoped<ITaskScopeResolver, NoTasksYetScopeResolver>();
-builder.Services.AddScoped<ICommitteeOpenTasks, NoTasksYetOpenTasks>();
+// Task-scoped authorization and the per-committee open-task counts (slice 4B).
+builder.Services.AddScoped<ITaskScopeResolver, TaskScopeResolver>();
+builder.Services.AddScoped<ICommitteeOpenTasks, CommitteeOpenTasks>();
 builder.Services.AddScoped<MeService>();
 builder.Services.AddScoped<AccountProvisioning>();
 builder.Services.AddScoped<Checkout>();
@@ -161,6 +162,10 @@ app.MapPublicRegistration();
 app.MapCheckIn();
 app.MapCommittees();
 app.MapEventVolunteers();
+app.MapTasks();
+app.MapMyTasks();
+app.MapTaskDetail();
+app.MapTaskParts();
 
 var migrate = app.Configuration.GetValue("Database:MigrateOnStartup", app.Environment.IsDevelopment());
 if (migrate)

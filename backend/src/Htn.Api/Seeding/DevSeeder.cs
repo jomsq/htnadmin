@@ -2,6 +2,9 @@ using Htn.Domain.Common;
 using Htn.Domain.Committees;
 using Htn.Domain.Events;
 using Htn.Domain.Registrations;
+using Htn.Domain.Settings;
+using Htn.Api.Features.Tasks;
+using Htn.Domain.Tasks;
 using Htn.Domain.Organization;
 using Htn.Infrastructure.Data;
 using Htn.Infrastructure.Identity;
@@ -42,6 +45,7 @@ public static class DevSeeder
         await EnsureEventsAsync(db, clock, ct);
         await EnsureRegistrationsAsync(db, sp.GetRequiredService<IPublicIdGenerator>(), clock, ct);
         await EnsureCommitteesAsync(db, clock, ct);
+        await EnsureTasksAsync(db, clock, ct);
         logger.LogInformation("Development seed data is in place");
     }
 
@@ -173,6 +177,117 @@ public static class DevSeeder
             var volunteer = EventVolunteer.Create(con.Id, name, email, "+639171234567", now);
             volunteer.AttachTo(committee);
             db.EventVolunteers.Add(volunteer);
+        }
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// The eleven sample cards of frame 07, spread over the five columns and the six committees of HTN Con 2026, with
+    /// assignees from the seeded people (plus one volunteer as an Assistant, who never earns points) and a checklist
+    /// each. The two Done cards are approved, so their points awards exist and the leaderboard has data to show.
+    /// Skipped entirely once the event has tasks, so re-seeding changes nothing.
+    /// </summary>
+    private static async Task EnsureTasksAsync(HtnDbContext db, TimeProvider clock, CancellationToken ct)
+    {
+        var con = await db.Events.SingleOrDefaultAsync(e => e.Slug == SampleEventSlug, ct);
+        if (con is null || await db.Tasks.AnyAsync(t => t.EventId == con.Id, ct)) return;
+        var settings = await db.OrgSettings.SingleOrDefaultAsync(s => s.Id == OrgSettings.SingletonId, ct);
+        if (settings is null) return;
+
+        var committees = await db.Committees.Where(c => c.EventId == con.Id).ToDictionaryAsync(c => c.Name, ct);
+        var people = await db.People.Where(p => p.Email != null).ToDictionaryAsync(p => p.Email!, p => p.Id, ct);
+        var admin = await db.Users.AsNoTracking().Where(u => u.Email == "alex@hackthenorth.ph")
+            .Select(u => (Guid?)u.Id).SingleOrDefaultAsync(ct);
+        var carla = await db.EventVolunteers.AsNoTracking()
+            .Where(v => v.EventId == con.Id && v.Name == "Carla Diaz").Select(v => (Guid?)v.Id).SingleOrDefaultAsync(ct);
+        var now = clock.GetUtcNow();
+        var manila = TimeSpan.FromHours(8);
+        // Stored in UTC; the UI shows Asia/Manila (5 pm Manila here).
+        DateTimeOffset Due(int month, int day) => new DateTimeOffset(2026, month, day, 17, 0, 0, manila).ToUniversalTime();
+
+        // (column, committee, title, due, checklist steps, steps already done, base points, [role:person])
+        (TaskBoardStatus Status, string Committee, string Title, DateTimeOffset Due, string[] Steps, int Done, int Points,
+            (TaskAssigneeRole Role, string? Email, bool Volunteer)[] Who)[] samples =
+        [
+            (TaskBoardStatus.Backlog, "Marketing", "Speaker teaser videos", Due(11, 14),
+                ["Shortlist speakers", "Write scripts", "Record clips", "Schedule posts"], 0, 30,
+                [(TaskAssigneeRole.Lead, "ken@hackthenorth.ph", false)]),
+            (TaskBoardStatus.Backlog, "Tech & AV", "Livestream test run", Due(11, 18),
+                ["Book the encoder", "Test upload speed", "Dry run with Programs"], 0, 20,
+                [(TaskAssigneeRole.Lead, "ken@hackthenorth.ph", false), (TaskAssigneeRole.Collab, "ana@hackthenorth.ph", false)]),
+            (TaskBoardStatus.ToDo, "Logistics", "Print ID lanyards", Due(11, 9),
+                ["Confirm the count", "Send artwork to the printer"], 0, 20,
+                [(TaskAssigneeRole.Lead, "mika@hackthenorth.ph", false), (TaskAssigneeRole.Assistant, "ana@hackthenorth.ph", false)]),
+            (TaskBoardStatus.ToDo, "Partnerships", "Sponsor deck v2", Due(11, 12),
+                ["Update the tiers", "Refresh the numbers", "Add last year's photos", "Proofread", "Export the PDF"], 1, 25,
+                [(TaskAssigneeRole.Lead, "alex@hackthenorth.ph", false), (TaskAssigneeRole.Collab, "mika@hackthenorth.ph", false)]),
+            (TaskBoardStatus.ToDo, "Programs", "Workshop room assignments", Due(11, 10),
+                ["Collect room needs", "Draft the grid", "Share with Logistics"], 0, 15,
+                [(TaskAssigneeRole.Lead, "mika@hackthenorth.ph", false)]),
+            (TaskBoardStatus.InProgress, "Logistics", "Finalize venue floor plan", Due(11, 2),
+                ["Get SMX CAD file", "Place registration desks", "Place sponsor booths (12)", "Mark power points & exits",
+                    "Share final PDF with Partnerships"], 3, 40,
+                [(TaskAssigneeRole.Lead, "alex@hackthenorth.ph", false), (TaskAssigneeRole.Collab, "mika@hackthenorth.ph", false),
+                    (TaskAssigneeRole.Assistant, "ana@hackthenorth.ph", false)]),
+            (TaskBoardStatus.InProgress, "Programs", "Confirm keynote speakers", Due(11, 5),
+                ["Send invitations", "Chase replies", "Collect bios", "Confirm travel"], 2, 30,
+                [(TaskAssigneeRole.Lead, "ken@hackthenorth.ph", false), (TaskAssigneeRole.Collab, "alex@hackthenorth.ph", false)]),
+            (TaskBoardStatus.InProgress, "Marketing", "Social posts: week 3", Due(11, 6),
+                ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], 4, 15,
+                [(TaskAssigneeRole.Lead, "mika@hackthenorth.ph", false), (TaskAssigneeRole.Assistant, null, true)]),
+            (TaskBoardStatus.Review, "Registration & Check-in", "Check-in desk staffing plan", Due(11, 4),
+                ["Count the desks", "Draw up the shifts", "Brief the scanners", "Print the cheat sheet"], 4, 20,
+                [(TaskAssigneeRole.Lead, "mika@hackthenorth.ph", false), (TaskAssigneeRole.Assistant, "ana@hackthenorth.ph", false)]),
+            (TaskBoardStatus.Done, "Partnerships", "Send sponsor contracts", Due(10, 28),
+                ["Draft the contract", "Legal check", "Send to Platinum", "Send to Gold", "Send to Silver", "File the signed copies"],
+                6, 35,
+                [(TaskAssigneeRole.Lead, "ken@hackthenorth.ph", false), (TaskAssigneeRole.Collab, "alex@hackthenorth.ph", false),
+                    (TaskAssigneeRole.Assistant, "ana@hackthenorth.ph", false)]),
+            (TaskBoardStatus.Done, "Logistics", "Book venue", Due(10, 20),
+                ["Compare quotes", "Sign the contract", "Pay the deposit"], 3, 50,
+                [(TaskAssigneeRole.Lead, "mika@hackthenorth.ph", false), (TaskAssigneeRole.Collab, "ana@hackthenorth.ph", false)]),
+        ];
+
+        var created = new List<(TaskItem Task, bool Finish)>();
+        var order = new Dictionary<TaskBoardStatus, int>();
+        foreach (var s in samples)
+        {
+            if (!committees.TryGetValue(s.Committee, out var committee)) continue;
+            // A Done card is built in Review and then approved below, which is what writes its awards.
+            var column = s.Status == TaskBoardStatus.Done ? TaskBoardStatus.Review : s.Status;
+            order[column] = order.TryGetValue(column, out var last) ? last + 100 : 100;
+            var task = TaskItem.Create(con.Id, committee.Id, con.NextTaskNumber(), s.Title, null, column, s.Points,
+                s.Due, null, order[column], now, admin);
+            db.Tasks.Add(task);
+            TaskOps.Log(db, task.Id, admin, TaskActivityKinds.Created, $"created this task in {TaskViews.Label(column)}", now);
+            var step = 0;
+            foreach (var text in s.Steps)
+            {
+                var item = TaskChecklistItem.Create(task, text, ++step, now, admin);
+                if (step <= s.Done) item.Toggle(true, now, admin);
+                db.TaskChecklistItems.Add(item);
+            }
+            foreach (var (role, email, volunteer) in s.Who)
+            {
+                if (volunteer)
+                {
+                    if (carla is { } volunteerId) db.TaskAssignees.Add(TaskAssignee.ForVolunteer(task, volunteerId, role, now, admin));
+                    continue;
+                }
+                if (email is not null && people.TryGetValue(email, out var personId))
+                    db.TaskAssignees.Add(TaskAssignee.ForPerson(task, personId, role, now, admin));
+            }
+            created.Add((task, s.Status == TaskBoardStatus.Done));
+        }
+        await db.SaveChangesAsync(ct);
+
+        // Approve the two finished cards: the same path the API takes, so the awards are real snapshots.
+        foreach (var (task, _) in created.Where(c => c.Finish))
+        {
+            task.Approve(now, admin);
+            var awards = await TaskOps.AwardAsync(db, task, settings, now, admin, ct);
+            TaskOps.Log(db, task.Id, admin, TaskActivityKinds.Approved,
+                $"approved it and awarded {TaskOps.PointsText(awards)} points", now);
         }
         await db.SaveChangesAsync(ct);
     }

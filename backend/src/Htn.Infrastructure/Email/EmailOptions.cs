@@ -51,6 +51,9 @@ public sealed class AppLinkOptions
     /// <summary>Public proof-of-payment upload page (frame 10, Upload mode).</summary>
     public string Proof(string token) => $"{PublicBaseUrl.TrimEnd('/')}/pay/{Uri.EscapeDataString(token)}";
 
+    /// <summary>The task detail dialog over an event's board (frame 08), deep-linked from a mention email.</summary>
+    public string Task(Guid eventId, Guid taskId) => $"{PublicBaseUrl.TrimEnd('/')}/events/{eventId}/tasks/{taskId}";
+
     /// <summary>Public registration page of an event.</summary>
     public string Register(string slug) => $"{PublicBaseUrl.TrimEnd('/')}/r/{Uri.EscapeDataString(slug)}";
 }

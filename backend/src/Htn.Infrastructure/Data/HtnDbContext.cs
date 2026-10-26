@@ -7,6 +7,7 @@ using Htn.Domain.Organization;
 using Htn.Domain.Outbox;
 using Htn.Domain.Registrations;
 using Htn.Domain.Settings;
+using Htn.Domain.Tasks;
 using Htn.Infrastructure.Identity;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
@@ -36,6 +37,13 @@ public sealed class HtnDbContext(DbContextOptions<HtnDbContext> options)
     public DbSet<Committee> Committees => Set<Committee>();
     public DbSet<CommitteeMember> CommitteeMembers => Set<CommitteeMember>();
     public DbSet<EventVolunteer> EventVolunteers => Set<EventVolunteer>();
+    public DbSet<TaskItem> Tasks => Set<TaskItem>();
+    public DbSet<TaskAssignee> TaskAssignees => Set<TaskAssignee>();
+    public DbSet<TaskChecklistItem> TaskChecklistItems => Set<TaskChecklistItem>();
+    public DbSet<TaskComment> TaskComments => Set<TaskComment>();
+    public DbSet<TaskAttachment> TaskAttachments => Set<TaskAttachment>();
+    public DbSet<TaskActivity> TaskActivities => Set<TaskActivity>();
+    public DbSet<PointsAward> PointsAwards => Set<PointsAward>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<OutboxMessage> Outbox => Set<OutboxMessage>();
     public DbSet<AccountToken> AccountTokens => Set<AccountToken>();
@@ -71,13 +79,17 @@ public sealed class HtnDbContext(DbContextOptions<HtnDbContext> options)
         foreach (var entry in ChangeTracker.Entries())
         {
             if (entry.State is not (EntityState.Modified or EntityState.Deleted)) continue;
-            if (entry.Entity is AuditEntry or Domain.Organization.PersonHistory or PaymentProof or CheckInScan)
+            if (entry.Entity is AuditEntry or Domain.Organization.PersonHistory or PaymentProof or CheckInScan or TaskActivity)
                 throw new InvalidOperationException($"{entry.Entity.GetType().Name} is append-only.");
+            // Points are append-only like finance: a reversal stamps the row (allowed), nothing is ever deleted.
+            if (entry.State == EntityState.Deleted && entry.Entity is PointsAward)
+                throw new InvalidOperationException("Points awards are reversed with a reason, never deleted.");
             if (entry.State == EntityState.Deleted && entry.Entity is Person)
                 throw new InvalidOperationException("People are deactivated, never deleted.");
             if (entry.State == EntityState.Deleted && entry.Entity is Position or PositionAssignment or PaymentAccount or StoredFile or Domain.Settings.OrgSettings
                     or Event or TicketType or Voucher or Registration or Attendee or Payment or PaymentProof
-                    or Committee or CommitteeMember or EventVolunteer)
+                    or Committee or CommitteeMember or EventVolunteer
+                    or TaskItem or TaskComment or TaskAttachment)
                 throw new InvalidOperationException($"{entry.Entity.GetType().Name} rows are never deleted.");
         }
     }

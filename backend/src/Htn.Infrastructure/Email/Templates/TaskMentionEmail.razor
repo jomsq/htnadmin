@@ -1,0 +1,22 @@
+<EmailLayout Title="@($"{MentionedBy} mentioned you on {Reference}")" Preheader="@($"{Reference} · {TaskTitle}")" BrandColor="@BrandColor" LogoCid="@LogoCid" Heading="@EventName">
+  <p style="margin-top:0;">Hi @FirstName,</p>
+  <p><strong>@MentionedBy</strong> mentioned you in a comment on <strong>@Reference · @TaskTitle</strong> (@CommitteeName).</p>
+  <blockquote style="margin:16px 0;padding:12px 16px;border-left:3px solid @BrandColor;background:#f9fafb;color:#374151;white-space:pre-wrap;">@Excerpt</blockquote>
+  <EmailButton Href="@Link" Label="Open the task" BrandColor="@BrandColor" />
+</EmailLayout>
+
+@code {
+    [Parameter, EditorRequired] public string FirstName { get; set; } = "";
+    [Parameter, EditorRequired] public string MentionedBy { get; set; } = "";
+    [Parameter, EditorRequired] public string Reference { get; set; } = "";
+    [Parameter, EditorRequired] public string TaskTitle { get; set; } = "";
+    [Parameter, EditorRequired] public string EventName { get; set; } = "";
+    [Parameter, EditorRequired] public string CommitteeName { get; set; } = "";
+
+    /// <summary>The comment, trimmed to a readable length. Razor escapes it, so a comment can't inject HTML.</summary>
+    [Parameter, EditorRequired] public string Excerpt { get; set; } = "";
+
+    [Parameter, EditorRequired] public string Link { get; set; } = "";
+    [Parameter] public string BrandColor { get; set; } = Brand.Color;
+    [Parameter] public string? LogoCid { get; set; }
+}

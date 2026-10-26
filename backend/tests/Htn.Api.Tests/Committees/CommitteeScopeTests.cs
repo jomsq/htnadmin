@@ -142,8 +142,8 @@ public sealed class CommitteeScopeTests(HtnApiFactory factory) : IClassFixture<H
     }
 }
 
-/// <summary>The deactivate guard, with slice 4B's open-task counts stubbed in.</summary>
-public sealed class CommitteeOpenTaskGuardTests(OpenTasksApiFactory factory) : IClassFixture<OpenTasksApiFactory>
+/// <summary>The deactivate guard, driven by the real task board (slice 4B).</summary>
+public sealed class CommitteeOpenTaskGuardTests(HtnApiFactory factory) : IClassFixture<HtnApiFactory>
 {
     [Fact]
     public async Task A_committee_with_open_tasks_cannot_be_deactivated()
@@ -151,15 +151,26 @@ public sealed class CommitteeOpenTaskGuardTests(OpenTasksApiFactory factory) : I
         var board = await factory.SignedInAsync(PersonLevel.Board);
         var eventId = await OnSaleAsync(board);
         var committee = await AddCommitteeAsync(board, eventId, "Logistics");
+        var (lead, _) = await SignedInUserAsync(factory, PersonLevel.Goon);
+        await SetLeadAsync(board, eventId, committee, lead.PersonId);
 
-        // TODO(4B): drive this from real tasks once the task board exists.
-        factory.OpenTasks.Counts[committee] = 9;
+        // Three open cards: one on the board, one archived (not open) and one finished (not open).
+        var open = await Tasks.TaskTestData.CreateTaskAsync(board, eventId, committee, "Print ID lanyards");
+        var archived = await Tasks.TaskTestData.CreateTaskAsync(board, eventId, committee, "Old idea");
+        var finished = await Tasks.TaskTestData.CreateTaskAsync(board, eventId, committee, "Book venue");
+        await Tasks.TaskTestData.AssignOkAsync(board, finished, lead.PersonId, "Lead");
+        await board.PostAsync($"/api/tasks/{archived}/archive", new { reason = "Duplicate." });
+        await Tasks.TaskTestData.ApproveAsync(board, finished);
+
+        Assert.Equal(1, (await PageAsync(board, eventId)).Committee(committee).GetProperty("openTasks").GetInt32());
         var refused = await board.PostAsync($"/api/events/{eventId}/committees/{committee}/deactivate", new { reason = "Cleaning up." });
         Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
         Assert.Equal("has_open_tasks", (await ApiClient.JsonAsync(refused)).Code());
-        Assert.Equal(9, (await PageAsync(board, eventId)).Committee(committee).GetProperty("openTasks").GetInt32());
 
-        factory.OpenTasks.Counts[committee] = 0;
+        // Archiving the last open card clears the count, and the committee closes.
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await board.PostAsync($"/api/tasks/{open}/archive", new { reason = "Not needed." })).StatusCode);
+        Assert.Equal(0, (await PageAsync(board, eventId)).Committee(committee).GetProperty("openTasks").GetInt32());
         Assert.Equal(HttpStatusCode.NoContent,
             (await board.PostAsync($"/api/events/{eventId}/committees/{committee}/deactivate", new { reason = "Cleaning up." })).StatusCode);
     }

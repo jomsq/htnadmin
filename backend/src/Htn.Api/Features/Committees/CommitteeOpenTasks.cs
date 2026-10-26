@@ -3,8 +3,8 @@ namespace Htn.Api.Features.Committees;
 /// <summary>
 /// Open (not Done, not archived) task counts per committee. Shown on every committee card and used by the deactivate
 /// guard: a committee is only deactivated once its board is clear.
-/// Slice 4A has no tasks, so <see cref="NoTasksYetOpenTasks"/> answers 0 for everything; slice 4B swaps in a query
-/// over the <c>tasks</c> table and this feature needs no other change.
+/// Implemented by <c>Features.Tasks.CommitteeOpenTasks</c> (slice 4B) as one grouped query over the <c>tasks</c>
+/// table: not archived and not Done.
 /// </summary>
 public interface ICommitteeOpenTasks
 {
@@ -13,14 +13,4 @@ public interface ICommitteeOpenTasks
 
     /// <summary>Open tasks of one committee.</summary>
     Task<int> ForCommitteeAsync(Guid committeeId, CancellationToken ct = default);
-}
-
-/// <summary>Slice 4A placeholder. TODO(4B): replace the registration with a query over the task table.</summary>
-public sealed class NoTasksYetOpenTasks : ICommitteeOpenTasks
-{
-    private static readonly IReadOnlyDictionary<Guid, int> Empty = new Dictionary<Guid, int>();
-
-    public Task<IReadOnlyDictionary<Guid, int>> ForEventAsync(Guid eventId, CancellationToken ct = default) => Task.FromResult(Empty);
-
-    public Task<int> ForCommitteeAsync(Guid committeeId, CancellationToken ct = default) => Task.FromResult(0);
 }

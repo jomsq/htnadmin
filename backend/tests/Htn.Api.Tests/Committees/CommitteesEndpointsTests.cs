@@ -30,7 +30,7 @@ public sealed class CommitteesEndpointsTests(HtnApiFactory factory) : IClassFixt
         Assert.Equal("Logistics & Venue", card.GetProperty("name").GetString());
         Assert.Equal(5, card.GetProperty("sortOrder").GetInt32());
         Assert.True(card.GetProperty("canManage").GetBoolean());
-        Assert.Equal(0, card.GetProperty("openTasks").GetInt32()); // TODO(4B): real counts once tasks exist
+        Assert.Equal(0, card.GetProperty("openTasks").GetInt32()); // no tasks on this committee yet
 
         var page = await PageAsync(board, eventId);
         Assert.True(page.GetProperty("canCreateCommittee").GetBoolean());

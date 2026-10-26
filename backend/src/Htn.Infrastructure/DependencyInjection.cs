@@ -49,6 +49,7 @@ public static class DependencyInjection
 
         services.AddScoped<EmailRenderer>();
         services.AddScoped<RegistrationEmails>();
+        services.AddScoped<TaskEmails>();
         services.AddSingleton<ITicketToken, TicketToken>();
         services.AddScoped<OutboxProcessor>();
         services.AddHostedService<OutboxWorker>();

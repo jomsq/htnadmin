@@ -60,8 +60,15 @@ public static class StoredFilePurposes
     /// <summary>Proof of payment from a registrant. Never in a public list: served only to Registrations.Manage.</summary>
     public const string PaymentProof = "payment_proof";
 
+    /// <summary>
+    /// A PNG, JPG or PDF on a task (frame 08). Served only through <c>GET /api/tasks/{id}/attachments/{aid}</c> to
+    /// people who can see that board, always as a download (<c>Content-Disposition: attachment</c> + <c>nosniff</c>).
+    /// </summary>
+    public const string TaskAttachment = "task_attachment";
+
     public const long EventCoverMaxBytes = 2 * 1024 * 1024;
     public const long PaymentProofMaxBytes = 5 * 1024 * 1024;
+    public const long TaskAttachmentMaxBytes = 5 * 1024 * 1024;
 
     /// <summary>Largest width or height of a proof image (phone screenshots and camera photos).</summary>
     public const int PaymentProofMaxDimension = 8192;
@@ -76,6 +83,7 @@ public static class StoredFilePurposes
     {
         EventCover => EventCoverMaxBytes,
         PaymentProof => PaymentProofMaxBytes,
+        TaskAttachment => TaskAttachmentMaxBytes,
         _ => StoredFile.MaxBytes,
     };
 }
@@ -87,6 +95,7 @@ public static class FileSignatures
 
     public const string PngContentType = "image/png";
     public const string JpegContentType = "image/jpeg";
+    public const string PdfContentType = "application/pdf";
 
     private static ReadOnlySpan<byte> Png => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
@@ -98,6 +107,10 @@ public static class FileSignatures
     public static (uint Width, uint Height) PngSize(ReadOnlySpan<byte> data) =>
         (System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.Slice(16, 4)),
          System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.Slice(20, 4)));
+
+    /// <summary>A PDF file: the <c>%PDF-</c> header, with the version digit that follows it.</summary>
+    public static bool IsPdf(ReadOnlySpan<byte> data) =>
+        data.Length >= 8 && data[..5].SequenceEqual("%PDF-"u8) && char.IsAsciiDigit((char)data[5]);
 
     /// <summary>JPEG start-of-image marker followed by another marker (FF D8 FF).</summary>
     public static bool IsJpeg(ReadOnlySpan<byte> data) =>
@@ -153,6 +166,20 @@ public static class FileSignatures
             return w == 0 || h == 0 ? null : (JpegContentType, w, h);
         }
         return null;
+    }
+
+    /// <summary>
+    /// Detects a task attachment from its bytes, never the declared type or file name: PNG, JPG or PDF. Images are
+    /// returned with their metadata stripped (fails closed, like every other upload); a PDF is stored byte for byte,
+    /// because stripping it would mean parsing it — which is why it is only ever served as a download with
+    /// <c>nosniff</c>, never rendered inline.
+    /// </summary>
+    public static (string ContentType, byte[] Bytes)? DetectAttachment(byte[] data)
+    {
+        if (IsPdf(data)) return (PdfContentType, data);
+        if (DetectImage(data, allowJpeg: true) is not { } image) return null;
+        if (image.Width > MaxImageDimension || image.Height > MaxImageDimension) return null;
+        return StripMetadata(data) is { } stripped ? (image.ContentType, stripped) : null;
     }
 
     /// <summary>

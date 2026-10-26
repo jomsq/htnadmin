@@ -475,6 +475,10 @@ namespace Htn.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(16)")
                         .HasColumnName("status");
 
+                    b.Property<int>("TaskCounter")
+                        .HasColumnType("integer")
+                        .HasColumnName("task_counter");
+
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
@@ -1720,6 +1724,536 @@ namespace Htn.Infrastructure.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Htn.Domain.Tasks.PointsAward", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("AwardedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("awarded_at");
+
+                    b.Property<Guid?>("AwardedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("awarded_by_id");
+
+                    b.Property<int>("BasePoints")
+                        .HasColumnType("integer")
+                        .HasColumnName("base_points");
+
+                    b.Property<Guid>("CommitteeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("committee_id");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<decimal>("Multiplier")
+                        .HasPrecision(4, 2)
+                        .HasColumnType("numeric(4,2)")
+                        .HasColumnName("multiplier");
+
+                    b.Property<Guid>("PersonId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("person_id");
+
+                    b.Property<decimal>("Points")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("numeric(8,2)")
+                        .HasColumnName("points");
+
+                    b.Property<string>("ReversalReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reversal_reason");
+
+                    b.Property<DateTimeOffset?>("ReversedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reversed_at");
+
+                    b.Property<Guid?>("ReversedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reversed_by_id");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("role");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("task_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_points_awards");
+
+                    b.HasIndex("TaskId")
+                        .HasDatabaseName("ix_points_awards_task_id");
+
+                    b.HasIndex("CommitteeId", "PersonId")
+                        .HasDatabaseName("ix_points_awards_committee_id_person_id")
+                        .HasFilter("reversed_at IS NULL");
+
+                    b.HasIndex("EventId", "PersonId")
+                        .HasDatabaseName("ix_points_awards_event_id_person_id")
+                        .HasFilter("reversed_at IS NULL");
+
+                    b.HasIndex("PersonId", "AwardedAt")
+                        .HasDatabaseName("ix_points_awards_person_id_awarded_at")
+                        .HasFilter("reversed_at IS NULL");
+
+                    b.HasIndex("TaskId", "PersonId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_points_awards_live_task_person")
+                        .HasFilter("reversed_at IS NULL");
+
+                    b.ToTable("points_awards", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_points_awards_base_points", "base_points BETWEEN 0 AND 1000");
+
+                            t.HasCheckConstraint("ck_points_awards_multiplier", "multiplier BETWEEN 0 AND 2");
+
+                            t.HasCheckConstraint("ck_points_awards_points", "points = round(base_points * multiplier, 2)");
+
+                            t.HasCheckConstraint("ck_points_awards_reversal", "(reversed_at IS NULL) = (reversal_reason IS NULL) AND (reversal_reason IS NULL OR char_length(reversal_reason) BETWEEN 1 AND 500)");
+
+                            t.HasCheckConstraint("ck_points_awards_role", "role IN ('Lead', 'Collab', 'Assistant')");
+                        });
+                });
+
+            modelBuilder.Entity("Htn.Domain.Tasks.TaskActivity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("ActorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_id");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("task_id");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("text");
+
+                    b.HasKey("Id")
+                        .HasName("pk_task_activities");
+
+                    b.HasIndex("TaskId", "At")
+                        .HasDatabaseName("ix_task_activities_task_id_at");
+
+                    b.ToTable("task_activities", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_task_activities_kind", "kind IN ('created', 'edited', 'moved', 'points_changed', 'assignee_added', 'assignee_removed', 'checklist_added', 'checklist_toggled', 'checklist_removed', 'attachment_added', 'attachment_removed', 'comment_added', 'comment_edited', 'comment_deleted', 'approved', 'reopened', 'archived', 'restored')");
+
+                            t.HasCheckConstraint("ck_task_activities_text", "char_length(text) BETWEEN 1 AND 300");
+                        });
+                });
+
+            modelBuilder.Entity("Htn.Domain.Tasks.TaskAssignee", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("AddedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("added_at");
+
+                    b.Property<Guid?>("AddedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("added_by_id");
+
+                    b.Property<Guid?>("PersonId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("person_id");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("role");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("task_id");
+
+                    b.Property<Guid?>("VolunteerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("volunteer_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_task_assignees");
+
+                    b.HasIndex("PersonId")
+                        .HasDatabaseName("ix_task_assignees_person_id")
+                        .HasFilter("person_id IS NOT NULL");
+
+                    b.HasIndex("TaskId")
+                        .HasDatabaseName("ix_task_assignees_task_id");
+
+                    b.HasIndex("VolunteerId")
+                        .HasDatabaseName("ix_task_assignees_volunteer_id");
+
+                    b.HasIndex("TaskId", "PersonId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_task_assignees_person")
+                        .HasFilter("person_id IS NOT NULL");
+
+                    b.HasIndex("TaskId", "VolunteerId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_task_assignees_volunteer")
+                        .HasFilter("volunteer_id IS NOT NULL");
+
+                    b.ToTable("task_assignees", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_task_assignees_role", "role IN ('Lead', 'Collab', 'Assistant')");
+
+                            t.HasCheckConstraint("ck_task_assignees_volunteer_role", "volunteer_id IS NULL OR role = 'Assistant'");
+
+                            t.HasCheckConstraint("ck_task_assignees_who", "(person_id IS NULL) <> (volunteer_id IS NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Htn.Domain.Tasks.TaskAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("FileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("file_id");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("file_name");
+
+                    b.Property<DateTimeOffset?>("RemovedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("removed_at");
+
+                    b.Property<Guid?>("RemovedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("removed_by_id");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("task_id");
+
+                    b.Property<DateTimeOffset>("UploadedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("uploaded_at");
+
+                    b.Property<Guid?>("UploadedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("uploaded_by_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_task_attachments");
+
+                    b.HasIndex("FileId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_task_attachments_file_id");
+
+                    b.HasIndex("TaskId", "UploadedAt")
+                        .HasDatabaseName("ix_task_attachments_task_id_uploaded_at");
+
+                    b.ToTable("task_attachments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_task_attachments_file_name", "char_length(file_name) BETWEEN 1 AND 200");
+                        });
+                });
+
+            modelBuilder.Entity("Htn.Domain.Tasks.TaskChecklistItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_id");
+
+                    b.Property<DateTimeOffset?>("DoneAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("done_at");
+
+                    b.Property<Guid?>("DoneById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("done_by_id");
+
+                    b.Property<bool>("IsDone")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_done");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("task_id");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("text");
+
+                    b.HasKey("Id")
+                        .HasName("pk_task_checklist_items");
+
+                    b.HasIndex("TaskId", "SortOrder")
+                        .HasDatabaseName("ix_task_checklist_items_task_id_sort_order");
+
+                    b.ToTable("task_checklist_items", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_task_checklist_items_done", "is_done = (done_at IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_task_checklist_items_sort_order", "sort_order BETWEEN 0 AND 1000000");
+
+                            t.HasCheckConstraint("ck_task_checklist_items_text", "char_length(text) BETWEEN 1 AND 200 AND text = btrim(text)");
+                        });
+                });
+
+            modelBuilder.Entity("Htn.Domain.Tasks.TaskComment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AuthorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("author_id");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("body");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DeleteReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("delete_reason");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by_id");
+
+                    b.Property<DateTimeOffset?>("EditedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("edited_at");
+
+                    b.PrimitiveCollection<List<Guid>>("MentionedPersonIds")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid[]")
+                        .HasColumnName("mentioned_person_ids")
+                        .HasDefaultValueSql("'{}'::uuid[]");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("task_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_task_comments");
+
+                    b.HasIndex("TaskId", "CreatedAt")
+                        .HasDatabaseName("ix_task_comments_task_id_created_at");
+
+                    b.ToTable("task_comments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_task_comments_body", "char_length(body) BETWEEN 1 AND 4000");
+
+                            t.HasCheckConstraint("ck_task_comments_deleted", "(deleted_at IS NULL) = (delete_reason IS NULL) AND (delete_reason IS NULL OR char_length(delete_reason) BETWEEN 1 AND 500)");
+
+                            t.HasCheckConstraint("ck_task_comments_mentions", "array_position(mentioned_person_ids, NULL) IS NULL AND cardinality(mentioned_person_ids) <= 10");
+                        });
+                });
+
+            modelBuilder.Entity("Htn.Domain.Tasks.TaskItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ApprovedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("approved_at");
+
+                    b.Property<Guid?>("ApprovedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("approved_by_id");
+
+                    b.Property<string>("ArchiveReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("archive_reason");
+
+                    b.Property<DateTimeOffset?>("ArchivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("archived_at");
+
+                    b.Property<Guid?>("ArchivedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("archived_by_id");
+
+                    b.Property<int>("BasePoints")
+                        .HasColumnType("integer")
+                        .HasColumnName("base_points");
+
+                    b.Property<Guid>("CommitteeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("committee_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_id");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("description");
+
+                    b.Property<DateTimeOffset?>("DueAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("due_at");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_archived");
+
+                    b.PrimitiveCollection<List<string>>("Labels")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasColumnName("labels")
+                        .HasDefaultValueSql("'{}'::text[]");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("integer")
+                        .HasColumnName("number");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("reference");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(140)
+                        .HasColumnType("character varying(140)")
+                        .HasColumnName("title");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_tasks");
+
+                    b.HasIndex("CommitteeId", "EventId")
+                        .HasDatabaseName("ix_tasks_committee_id_event_id");
+
+                    b.HasIndex("CommitteeId", "Status")
+                        .HasDatabaseName("ix_tasks_committee_id_status")
+                        .HasFilter("NOT is_archived");
+
+                    b.HasIndex("EventId", "Number")
+                        .IsUnique()
+                        .HasDatabaseName("ux_tasks_event_number");
+
+                    b.HasIndex("EventId", "Status", "SortOrder")
+                        .HasDatabaseName("ix_tasks_event_id_status_sort_order")
+                        .HasFilter("NOT is_archived");
+
+                    b.ToTable("tasks", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_tasks_approved", "(status = 'Done') = (approved_at IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_tasks_archived", "is_archived = (archived_at IS NOT NULL) AND (is_archived OR archive_reason IS NULL) AND (archive_reason IS NULL OR char_length(archive_reason) BETWEEN 1 AND 500)");
+
+                            t.HasCheckConstraint("ck_tasks_base_points", "base_points BETWEEN 0 AND 1000");
+
+                            t.HasCheckConstraint("ck_tasks_description", "description IS NULL OR char_length(description) BETWEEN 1 AND 4000");
+
+                            t.HasCheckConstraint("ck_tasks_labels", "array_position(labels, NULL) IS NULL AND cardinality(labels) <= 5");
+
+                            t.HasCheckConstraint("ck_tasks_number", "number > 0");
+
+                            t.HasCheckConstraint("ck_tasks_reference", "reference = 'HTN-' || number::text");
+
+                            t.HasCheckConstraint("ck_tasks_sort_order", "sort_order BETWEEN 0 AND 1000000");
+
+                            t.HasCheckConstraint("ck_tasks_status", "status IN ('Backlog', 'ToDo', 'InProgress', 'Review', 'Done')");
+
+                            t.HasCheckConstraint("ck_tasks_title", "char_length(title) BETWEEN 1 AND 140 AND title = btrim(title)");
+                        });
+                });
+
             modelBuilder.Entity("Htn.Infrastructure.Identity.AccountToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2383,6 +2917,124 @@ namespace Htn.Infrastructure.Data.Migrations
                         .HasForeignKey("LogoLightFileId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_org_settings_stored_files_logo_light_file_id");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Tasks.PointsAward", b =>
+                {
+                    b.HasOne("Htn.Domain.Committees.Committee", null)
+                        .WithMany()
+                        .HasForeignKey("CommitteeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_points_awards_committees_committee_id");
+
+                    b.HasOne("Htn.Domain.Events.Event", null)
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_points_awards_events_event_id");
+
+                    b.HasOne("Htn.Domain.Organization.Person", null)
+                        .WithMany()
+                        .HasForeignKey("PersonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_points_awards_people_person_id");
+
+                    b.HasOne("Htn.Domain.Tasks.TaskItem", null)
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_points_awards_tasks_task_id");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Tasks.TaskActivity", b =>
+                {
+                    b.HasOne("Htn.Domain.Tasks.TaskItem", null)
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_task_activities_tasks_task_id");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Tasks.TaskAssignee", b =>
+                {
+                    b.HasOne("Htn.Domain.Organization.Person", null)
+                        .WithMany()
+                        .HasForeignKey("PersonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_task_assignees_people_person_id");
+
+                    b.HasOne("Htn.Domain.Tasks.TaskItem", null)
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_task_assignees_tasks_task_id");
+
+                    b.HasOne("Htn.Domain.Committees.EventVolunteer", null)
+                        .WithMany()
+                        .HasForeignKey("VolunteerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_task_assignees_event_volunteers_volunteer_id");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Tasks.TaskAttachment", b =>
+                {
+                    b.HasOne("Htn.Domain.Files.StoredFile", null)
+                        .WithMany()
+                        .HasForeignKey("FileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_task_attachments_stored_files_file_id");
+
+                    b.HasOne("Htn.Domain.Tasks.TaskItem", null)
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_task_attachments_tasks_task_id");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Tasks.TaskChecklistItem", b =>
+                {
+                    b.HasOne("Htn.Domain.Tasks.TaskItem", null)
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_task_checklist_items_tasks_task_id");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Tasks.TaskComment", b =>
+                {
+                    b.HasOne("Htn.Domain.Tasks.TaskItem", null)
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_task_comments_tasks_task_id");
+                });
+
+            modelBuilder.Entity("Htn.Domain.Tasks.TaskItem", b =>
+                {
+                    b.HasOne("Htn.Domain.Events.Event", null)
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_tasks_events_event_id");
+
+                    b.HasOne("Htn.Domain.Committees.Committee", null)
+                        .WithMany()
+                        .HasForeignKey("CommitteeId", "EventId")
+                        .HasPrincipalKey("Id", "EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_tasks_committees_committee_id_event_id");
                 });
 
             modelBuilder.Entity("Htn.Infrastructure.Identity.AccountToken", b =>

@@ -26,6 +26,7 @@ public sealed class OutboxProcessor(
     IEmailSender sender,
     EmailRenderer renderer,
     RegistrationEmails registrationEmails,
+    TaskEmails taskEmails,
     TimeProvider clock,
     IOptions<AppLinkOptions> links,
     IOptions<AccountTokenOptions> tokenOptions,
@@ -102,6 +103,8 @@ public sealed class OutboxProcessor(
                 return await registrationEmails.TicketAsync(Payload<TicketEmailPayload>(message));
             case RegistrationEmailTypes.Cancelled:
                 return await registrationEmails.CancelledAsync(Payload<RegistrationCancelledEmailPayload>(message));
+            case EmailTypes.TaskMention:
+                return await taskEmails.MentionAsync(Payload<TaskMentionEmailPayload>(message));
             case RegistrationEmailTypes.Test:
                 return await registrationEmails.TestAsync(Payload<EventTestEmailPayload>(message));
             default:
@@ -124,6 +127,10 @@ public sealed class OutboxProcessor(
 
     public static OutboxMessage EventTestEmail(EventTestEmailPayload payload, DateTimeOffset at) =>
         OutboxMessage.Create(RegistrationEmailTypes.Test, JsonSerializer.Serialize(payload, Json), null, at);
+
+    /// <summary>One @mention in one task comment. Queued only for people who can see that board.</summary>
+    public static OutboxMessage TaskMentionEmail(TaskMentionEmailPayload payload, DateTimeOffset at) =>
+        OutboxMessage.Create(EmailTypes.TaskMention, JsonSerializer.Serialize(payload, Json), null, at);
 
     public static OutboxMessage InviteEmail(InviteEmailPayload payload, string rawToken, DateTimeOffset at) =>
         OutboxMessage.Create(EmailTypes.Invite, JsonSerializer.Serialize(payload, Json), rawToken, at);
