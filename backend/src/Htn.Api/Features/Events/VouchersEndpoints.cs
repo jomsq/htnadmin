@@ -9,7 +9,7 @@ namespace Htn.Api.Features.Events;
 
 public static class VouchersEndpoints
 {
-    /// <summary>Unique (event_id, upper(code)), created by raw SQL in the Events migration.</summary>
+    /// <summary>Unique (event_id, code); codes are stored upper-case.</summary>
     public const string CodeIndex = "ux_vouchers_event_code";
 
     public static RouteGroupBuilder MapVouchers(this IEndpointRouteBuilder app)
@@ -47,8 +47,12 @@ public static class VouchersEndpoints
     }
 
     private static async Task<IResult> Update(
-        Guid eventId, Guid voucherId, VoucherRequest req, HtnDbContext db, IAuditLog audit, ICurrentUser me, CancellationToken ct)
+        Guid eventId, Guid voucherId, VoucherRequest req, HtnDbContext db, IAuditLog audit, ICurrentUser me, TimeProvider clock,
+        CancellationToken ct)
     {
+        // The usage-limit floor reads EventUsage, so it runs under the event lock (see EventLock).
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        if (!await EventLock.AcquireAsync(db, eventId, ct)) return TypedResults.NotFound();
         var voucher = await db.Vouchers.SingleOrDefaultAsync(v => v.Id == voucherId && v.EventId == eventId, ct);
         if (voucher is null) return TypedResults.NotFound();
         if (!voucher.IsActive) return Inactive();
@@ -58,7 +62,7 @@ public static class VouchersEndpoints
         var code = Voucher.NormalizeCode(req.Code);
         if (await db.Vouchers.AnyAsync(v => v.EventId == eventId && v.Code == code && v.Id != voucherId, ct)) return DuplicateCode();
 
-        var usage = await EventUsage.ForEventAsync(db, eventId, ct);
+        var usage = await EventUsage.ForEventAsync(db, eventId, clock.GetUtcNow(), ct);
         var used = usage.VoucherUsed(voucher.Id);
         if (req.UsageLimit is { } limit && limit < used)
             return Problems.Field("usageLimit", $"The limit can't be below the {used} already used.", "usage_limit_below_used");
@@ -69,6 +73,7 @@ public static class VouchersEndpoints
         try
         {
             await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
         }
         catch (DbUpdateException ex) when (EventViews.IsUniqueViolation(ex, CodeIndex))
         {
@@ -80,15 +85,20 @@ public static class VouchersEndpoints
     private static async Task<IResult> Deactivate(
         Guid eventId, Guid voucherId, HtnDbContext db, IAuditLog audit, ICurrentUser me, TimeProvider clock, CancellationToken ct)
     {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        if (!await EventLock.AcquireAsync(db, eventId, ct)) return TypedResults.NotFound();
         var voucher = await db.Vouchers.SingleOrDefaultAsync(v => v.Id == voucherId && v.EventId == eventId, ct);
         if (voucher is null) return TypedResults.NotFound();
         if (!voucher.IsActive) return Inactive();
 
+        var now = clock.GetUtcNow();
         var before = EventViews.Audit(voucher);
-        voucher.Deactivate(clock.GetUtcNow());
+        voucher.Deactivate(now);
         audit.Record(me.Id, "voucher.deactivate", nameof(Voucher), voucher.Id.ToString(), before, EventViews.Audit(voucher));
         await db.SaveChangesAsync(ct);
-        return TypedResults.Ok(EventViews.Voucher(voucher, await EventUsage.ForEventAsync(db, eventId, ct)));
+        var usage = await EventUsage.ForEventAsync(db, eventId, now, ct);
+        await tx.CommitAsync(ct);
+        return TypedResults.Ok(EventViews.Voucher(voucher, usage));
     }
 
     /// <summary>Every scoped ticket type must belong to this event.</summary>

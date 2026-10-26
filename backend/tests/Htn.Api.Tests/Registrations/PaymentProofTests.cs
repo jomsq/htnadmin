@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text.Json;
+using Htn.Api.Features.Registrations;
 using Htn.Api.Tests.Infrastructure;
 using Htn.Domain.Files;
 using Htn.Domain.Organization;
@@ -65,7 +67,8 @@ public sealed class PaymentProofTests(HtnApiFactory factory) : IClassFixture<Htn
         // Admin: row and detail show it, and the image streams with locked-down headers.
         var row = (await ApiClient.JsonAsync(await board.GetAsync($"/api/events/{ev.Id}/registrations"))).GetProperty("items")[0];
         Assert.True(row.GetProperty("hasProof").GetBoolean());
-        Assert.Equal("GCash 7741 0923", row.GetProperty("reference").GetString());
+        Assert.Equal("GCash 7741 0923", row.GetProperty("proofReference").GetString()); // typed by the registrant
+        Assert.Equal(JsonValueKind.Null, row.GetProperty("reference").ValueKind);          // no payment recorded yet
         var detail = await ApiClient.JsonAsync(await board.GetAsync($"/api/events/{ev.Id}/registrations/{regId}"));
         var url = detail.GetProperty("proof").GetProperty("url").GetString()!;
         var image = await board.GetAsync(url);
@@ -124,8 +127,8 @@ public sealed class PaymentProofTests(HtnApiFactory factory) : IClassFixture<Htn
         // Just under 5 MB is fine.
         Assert.Equal(HttpStatusCode.NoContent, (await UploadAsync(anon, r.Token, [.. Png, .. new byte[5 * 1024 * 1024 - Png.Length - 1]])).StatusCode);
 
-        // At most 10 per registration.
-        for (var i = 1; i < 10; i++)
+        // At most 3 per registration.
+        for (var i = 1; i < PublicRegistrationEndpoints.MaxProofsPerRegistration; i++)
             Assert.Equal(HttpStatusCode.NoContent, (await UploadAsync(anon, r.Token, Png)).StatusCode);
         var tooMany = await UploadAsync(anon, r.Token, Png);
         Assert.Equal(HttpStatusCode.Conflict, tooMany.StatusCode);

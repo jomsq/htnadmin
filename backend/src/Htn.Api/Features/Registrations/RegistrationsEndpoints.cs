@@ -1,6 +1,7 @@
 using System.Text;
 using Htn.Api.Auth;
 using Htn.Api.Common;
+using Htn.Api.Features.Events;
 using Htn.Domain.Common;
 using Htn.Domain.Events;
 using Htn.Domain.Files;
@@ -52,50 +53,67 @@ public static class RegistrationsEndpoints
         var size = Math.Clamp(pageSize ?? 50, 1, MaxPageSize);
         var now = clock.GetUtcNow();
 
-        var q = Search(db.Registrations.AsNoTracking().Where(r => r.EventId == eventId), search);
+        var q = Search(db.Registrations.AsNoTracking().Where(r => r.EventId == eventId), eventId, search);
 
-        var byStatus = await q.GroupBy(r => r.Status).Select(g => new { g.Key, Count = g.Count() }).ToListAsync(ct);
-        var overdueCount = await q.CountAsync(r => r.Status == RegistrationStatus.PendingPayment && r.Deadline < now, ct);
-        int Count(RegistrationStatus s) => byStatus.SingleOrDefault(x => x.Key == s)?.Count ?? 0;
-        var counts = new RegistrationCountsDto(byStatus.Sum(x => x.Count), Count(RegistrationStatus.PendingPayment), Count(RegistrationStatus.Paid),
-            Count(RegistrationStatus.CheckedIn), Count(RegistrationStatus.Cancelled), overdueCount);
+        // Every tab count, overdue included, in one grouped query; the filtered total is derived from it.
+        var buckets = await q
+            .GroupBy(r => new { r.Status, Overdue = r.Status == RegistrationStatus.PendingPayment && r.Deadline != null && r.Deadline < now })
+            .Select(g => new { g.Key.Status, g.Key.Overdue, Count = g.Count() })
+            .ToListAsync(ct);
+        int Count(RegistrationStatus s) => buckets.Where(b => b.Status == s).Sum(b => b.Count);
+        var counts = new RegistrationCountsDto(buckets.Sum(b => b.Count), Count(RegistrationStatus.PendingPayment), Count(RegistrationStatus.Paid),
+            Count(RegistrationStatus.CheckedIn), Count(RegistrationStatus.Cancelled), buckets.Where(b => b.Overdue).Sum(b => b.Count));
+        var total = buckets.Where(b => (statusFilter is not { } f || b.Status == f) && (overdue != true || b.Overdue)).Sum(b => b.Count);
 
         if (statusFilter is { } sf) q = q.Where(r => r.Status == sf);
-        if (overdue == true) q = q.Where(r => r.Status == RegistrationStatus.PendingPayment && r.Deadline < now);
-        var total = await q.CountAsync(ct);
+        if (overdue == true) q = q.Where(r => r.Status == RegistrationStatus.PendingPayment && r.Deadline != null && r.Deadline < now);
         var regs = await q.OrderByDescending(r => r.CreatedAt).ThenByDescending(r => r.Id).Skip((p - 1) * size).Take(size).ToListAsync(ct);
         var rows = await RowsAsync(db, eventId, regs, now, ct);
         return TypedResults.Ok(new RegistrationListDto(rows, total, p, size, counts));
     }
 
     /// <summary>Contains-search (escaped ILIKE) on attendee names, email and participant ID.</summary>
-    private static IQueryable<Registration> Search(IQueryable<Registration> q, string? search)
+    private static IQueryable<Registration> Search(IQueryable<Registration> q, Guid eventId, string? search)
     {
         var term = search?.Trim();
         if (string.IsNullOrEmpty(term)) return q;
         if (term.Length > 100) term = term[..100];
         var pattern = "%" + LikeEscape(term) + "%";
-        return q.Where(r => r.Attendees.Any(a =>
+        return q.Where(r => r.Attendees.Any(a => a.EventId == eventId && (
             EF.Functions.ILike(a.FirstName + " " + a.LastName, pattern, @"\")
             || EF.Functions.ILike(a.FirstName + " " + (a.MiddleName ?? "") + " " + a.LastName, pattern, @"\")
             || EF.Functions.ILike(a.Email, pattern, @"\")
-            || EF.Functions.ILike(a.ParticipantId, pattern, @"\")));
+            || EF.Functions.ILike(a.ParticipantId, pattern, @"\"))));
     }
 
     /// <summary>Escapes the LIKE wildcards (% and _) and the escape character itself.</summary>
     public static string LikeEscape(string term) =>
         term.Replace(@"\", @"\\", StringComparison.Ordinal).Replace("%", @"\%", StringComparison.Ordinal).Replace("_", @"\_", StringComparison.Ordinal);
 
-    private sealed record RowExtras(string TicketName, Payment? Payment, PaymentProof? Proof);
+    /// <summary>The newest proof's registrant-typed reference and upload time (the image itself is served separately).</summary>
+    private sealed record ProofSummary(string? Reference, DateTimeOffset UploadedAt);
 
-    private static async Task<Dictionary<Guid, RowExtras>> ExtrasAsync(HtnDbContext db, Guid eventId, IReadOnlyCollection<Registration> regs, CancellationToken ct)
+    private sealed record RowExtras(string TicketName, Payment? Payment, ProofSummary? Proof);
+
+    private static async Task<Dictionary<Guid, RowExtras>> ExtrasAsync(
+        HtnDbContext db, Guid eventId, IReadOnlyCollection<Registration> regs, CancellationToken ct, bool includeProofs = true)
     {
         var ids = regs.Select(r => r.Id).ToList();
         var tickets = await db.TicketTypes.AsNoTracking().Where(t => t.EventId == eventId).ToDictionaryAsync(t => t.Id, t => t.Name, ct);
         var payments = await db.Payments.AsNoTracking().Where(x => ids.Contains(x.RegistrationId) && x.RevertedAt == null)
             .ToDictionaryAsync(x => x.RegistrationId, ct);
-        var proofs = (await db.PaymentProofs.AsNoTracking().Where(x => ids.Contains(x.RegistrationId)).ToListAsync(ct))
-            .GroupBy(x => x.RegistrationId).ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.UploadedAt).ThenByDescending(x => x.Id).First());
+        var proofs = new Dictionary<Guid, ProofSummary>();
+        if (includeProofs)
+        {
+            // Only the newest proof per registration.
+            var latest = await db.PaymentProofs.AsNoTracking()
+                .Where(x => ids.Contains(x.RegistrationId)
+                            && !db.PaymentProofs.Any(n => n.RegistrationId == x.RegistrationId
+                                                          && (n.UploadedAt > x.UploadedAt || (n.UploadedAt == x.UploadedAt && n.Id.CompareTo(x.Id) > 0))))
+                .Select(x => new { x.RegistrationId, x.Reference, x.UploadedAt })
+                .ToListAsync(ct);
+            proofs = latest.ToDictionary(x => x.RegistrationId, x => new ProofSummary(x.Reference, x.UploadedAt));
+        }
         return regs.ToDictionary(r => r.Id, r => new RowExtras(
             tickets.GetValueOrDefault(r.TicketTypeId, ""), payments.GetValueOrDefault(r.Id), proofs.GetValueOrDefault(r.Id)));
     }
@@ -107,12 +125,13 @@ public static class RegistrationsEndpoints
         return regs.Select(r => Row(r, extras[r.Id], now)).ToList();
     }
 
+    /// <summary><c>reference</c> is the payment's (entered by the admin); <c>proofReference</c> is what the registrant typed.</summary>
     private static RegistrationRowDto Row(Registration r, RowExtras x, DateTimeOffset now)
     {
         var buyer = r.Buyer;
         return new RegistrationRowDto(
             r.Id, buyer.FullName, buyer.Email, r.Attendees.Count, r.Attendees.OrderBy(a => a.SortOrder).Select(a => a.ParticipantId).ToList(),
-            x.TicketName, r.Total, r.Status, r.IsOverdueAt(now), x.Payment?.Method, x.Payment?.Reference ?? x.Proof?.Reference,
+            x.TicketName, r.Total, r.Status, r.IsOverdueAt(now), x.Payment?.Method, x.Payment?.Reference, x.Proof?.Reference,
             x.Proof is not null, r.CreatedAt, r.Source);
     }
 
@@ -148,7 +167,7 @@ public static class RegistrationsEndpoints
 
         return new RegistrationDetailDto(
             row.Id, row.BuyerName, row.BuyerEmail, row.AttendeeCount, row.ParticipantIds, row.TicketName, row.Total, row.Status, row.Overdue,
-            row.Method, row.Reference, row.HasProof, row.CreatedAt, row.Source,
+            row.Method, row.Reference, row.ProofReference, row.HasProof, row.CreatedAt, row.Source,
             reg.TicketTypeId,
             reg.Attendees.OrderBy(a => a.SortOrder).Select(a => new AttendeeDto(
                 a.Id, a.ParticipantId, a.FirstName, a.MiddleName, a.LastName, a.Gender, a.Email, a.Mobile, a.Occupation, a.Company,
@@ -203,43 +222,89 @@ public static class RegistrationsEndpoints
             eventId, req.TicketTypeId!.Value, req.VoucherCode, req.Attendees!.Select(RegistrationRules.ToDetails).ToList(),
             RegistrationSource.Manual, me.Id, null, req.MarkPaid), ct);
         if (result.Error != CheckoutError.None)
-            return result.Error == CheckoutError.InvalidPaymentAccount
-                ? Problems.Field("markPaid.paymentAccountId", "Choose an active account that matches the payment method.", "invalid_payment_account")
-                : RegistrationProblems.For(result.Error);
+            return result.Error switch
+            {
+                CheckoutError.InvalidPaymentAccount =>
+                    Problems.Field("markPaid.paymentAccountId", "Choose an active account that matches the payment method.", "invalid_payment_account"),
+                CheckoutError.CompReasonRequired => Problems.Field("markPaid.reason", CompReasonMessage, "reason_required"),
+                _ => RegistrationProblems.For(result.Error),
+            };
         var reg = result.Registration!;
         return TypedResults.Created($"/api/events/{eventId}/registrations/{reg.Id}", await DetailAsync(db, reg, clock.GetUtcNow(), ct));
     }
 
+    public const string CompReasonMessage = "Give a reason for marking this as a comp: money is due on it.";
+
     private static async Task<IResult> MarkPaid(
         Guid eventId, BulkMarkPaidRequest req, HtnDbContext db, IAuditLog audit, ICurrentUser me, TimeProvider clock, CancellationToken ct)
     {
-        if (!await db.Events.AnyAsync(e => e.Id == eventId, ct)) return TypedResults.NotFound();
         if (await Checkout.PaymentAccountError(db, req.Method, req.PaymentAccountId, ct))
             return Problems.Field("paymentAccountId", "Choose an active account that matches the payment method.", "invalid_payment_account");
         var now = clock.GetUtcNow();
         if (req.ReceivedAt is { } received && received > now.AddMinutes(5))
             return Problems.Field("receivedAt", "The payment can't be received in the future.");
+        var method = req.Method!.Value;
+        var compReason = RegistrationRules.Clean(req.Reason);
+        var overrideReason = RegistrationRules.Clean(req.OverrideCapacityReason);
+
+        // Overdue registrations released their seat, so paying one re-checks capacity: under the event lock (EventLock).
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        if (!await EventLock.AcquireAsync(db, eventId, ct)) return TypedResults.NotFound();
+        var ev = await db.Events.AsNoTracking().SingleAsync(e => e.Id == eventId, ct);
 
         var ids = req.Ids!.Distinct().ToList();
         // Only registrations of this event that are still pending; anything else selected is skipped.
         var regs = await db.Registrations.Where(r => r.EventId == eventId && ids.Contains(r.Id) && r.Status == RegistrationStatus.PendingPayment)
-            .ToListAsync(ct);
+            .OrderBy(r => r.CreatedAt).ThenBy(r => r.Id).ToListAsync(ct);
+        if (compReason is null && regs.Any(r => r.CompNeedsReason(method)))
+            return Problems.Field("reason", CompReasonMessage, "reason_required");
+
+        // Re-admit overdue registrations one by one against the live counts (each one admitted takes its seat).
+        var usage = await EventUsage.ForEventAsync(db, eventId, now, ct);
+        var eventSold = usage.EventSold(eventId);
+        var ticketSold = new Dictionary<Guid, int>();
+        var voucherUsed = new Dictionary<Guid, int>();
+        var tickets = await db.TicketTypes.AsNoTracking().Where(t => t.EventId == eventId).ToDictionaryAsync(t => t.Id, ct);
+        var vouchers = await db.Vouchers.AsNoTracking().Where(v => v.EventId == eventId).ToDictionaryAsync(v => v.Id, ct);
+        var overCapacity = new List<Guid>();
+        foreach (var reg in regs.Where(r => r.IsOverdueAt(now)))
+        {
+            var sold = ticketSold.TryGetValue(reg.TicketTypeId, out var ts) ? ts : usage.TicketSold(reg.TicketTypeId);
+            var used = reg.VoucherId is { } vid ? (voucherUsed.TryGetValue(vid, out var vu) ? vu : usage.VoucherUsed(vid)) : 0;
+            var fits = eventSold + reg.Seats <= ev.Capacity
+                       && sold + 1 <= tickets[reg.TicketTypeId].Quantity
+                       && (reg.VoucherId is not { } v || vouchers[v].UsageLimit is not { } limit || used + 1 <= limit);
+            if (!fits) overCapacity.Add(reg.Id);
+            eventSold += reg.Seats;
+            ticketSold[reg.TicketTypeId] = sold + 1;
+            if (reg.VoucherId is { } vid2) voucherUsed[vid2] = used + 1;
+        }
+        if (overCapacity.Count > 0 && overrideReason is null)
+            return Problems.Result(StatusCodes.Status409Conflict, "Not enough seats",
+                "The payment deadline passed and the seat was released, and the event (or ticket, or voucher) is now full. " +
+                "Give an override reason to take the payment anyway.", "capacity_exceeded");
+
         foreach (var reg in regs)
         {
-            var payment = reg.MarkPaid(req.Method!.Value, req.PaymentAccountId, req.Reference, req.ReceivedAt, me.Id, now);
+            var payment = reg.MarkPaid(method, req.PaymentAccountId, req.Reference, req.ReceivedAt, me.Id, now);
             db.Payments.Add(payment);
             audit.Record(me.Id, "registration.mark_paid", nameof(Registration), reg.Id.ToString(),
-                new { status = RegistrationStatus.PendingPayment }, RegistrationAudit.Payment(reg, payment));
+                new { status = RegistrationStatus.PendingPayment },
+                RegistrationAudit.Payment(reg, payment, overCapacity.Contains(reg.Id) ? overrideReason : null),
+                compReason);
             RegistrationOutbox.QueueTickets(db, reg, now);
         }
-        // Two admins marking the same row: the row version makes the second save a 409 concurrent_change.
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return TypedResults.Ok(new MarkPaidResultDto(regs.Count));
     }
 
     private static async Task<IResult> Cancel(
         Guid eventId, Guid id, ReasonRequest req, HtnDbContext db, IAuditLog audit, ICurrentUser me, TimeProvider clock, CancellationToken ct)
     {
+        // Frees seats and voucher use: under the event lock, taken before the registration row (EventLock).
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        if (!await EventLock.AcquireAsync(db, eventId, ct)) return TypedResults.NotFound();
         var reg = await db.Registrations.SingleOrDefaultAsync(r => r.Id == id && r.EventId == eventId, ct);
         if (reg is null) return TypedResults.NotFound();
         if (reg.Status is not (RegistrationStatus.PendingPayment or RegistrationStatus.Paid))
@@ -251,12 +316,15 @@ public static class RegistrationsEndpoints
         audit.Record(me.Id, "registration.cancel", nameof(Registration), reg.Id.ToString(), new { status = before }, new { status = reg.Status }, reg.CancelReason);
         db.Outbox.Add(Infrastructure.Outbox.OutboxProcessor.CancelledEmail(reg.Id, now));
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return TypedResults.Ok(await DetailAsync(db, reg, now, ct));
     }
 
     private static async Task<IResult> RevertPayment(
         Guid eventId, Guid id, ReasonRequest req, HtnDbContext db, IAuditLog audit, ICurrentUser me, TimeProvider clock, CancellationToken ct)
     {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        if (!await EventLock.AcquireAsync(db, eventId, ct)) return TypedResults.NotFound();
         var reg = await db.Registrations.SingleOrDefaultAsync(r => r.Id == id && r.EventId == eventId, ct);
         if (reg is null) return TypedResults.NotFound();
         if (reg.Status != RegistrationStatus.Paid)
@@ -272,6 +340,7 @@ public static class RegistrationsEndpoints
             new { status = reg.Status, ticketVersions = reg.Attendees.OrderBy(a => a.SortOrder).Select(a => a.TicketVersion).ToList() },
             payment.RevertReason);
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return TypedResults.Ok(await DetailAsync(db, reg, now, ct));
     }
 
@@ -299,7 +368,11 @@ public static class RegistrationsEndpoints
         if (reg.Status is not (RegistrationStatus.Paid or RegistrationStatus.CheckedIn))
             return Problems.Result(StatusCodes.Status409Conflict, "Only a paid registration has tickets.", code: "not_paid");
         var now = clock.GetUtcNow();
-        var queued = RegistrationOutbox.QueueTickets(db, reg, now);
+        // A group already partly in: only the members who haven't checked in get their tickets again.
+        var partlyIn = reg.Status == RegistrationStatus.CheckedIn;
+        if (partlyIn && reg.Attendees.All(a => a.CheckedInAt is not null))
+            return Problems.Result(StatusCodes.Status409Conflict, "Everyone on this registration has checked in.", code: "all_checked_in");
+        var queued = RegistrationOutbox.QueueTickets(db, reg, now, notCheckedInOnly: partlyIn);
         audit.Record(me.Id, "registration.resend_ticket", nameof(Registration), reg.Id.ToString(), after: new { emails = queued });
         await db.SaveChangesAsync(ct);
         return TypedResults.NoContent();
@@ -313,7 +386,7 @@ public static class RegistrationsEndpoints
         if (ev is null) return TypedResults.NotFound();
         var now = clock.GetUtcNow();
         var regs = await db.Registrations.AsNoTracking().Where(r => r.EventId == eventId).OrderBy(r => r.CreatedAt).ThenBy(r => r.Id).ToListAsync(ct);
-        var extras = await ExtrasAsync(db, eventId, regs, ct);
+        var extras = await ExtrasAsync(db, eventId, regs, ct, includeProofs: false);
         var csv = RegistrationCsv.Build(regs, r => extras[r.Id].TicketName, r => extras[r.Id].Payment, now);
 
         audit.Record(me.Id, "registration.export", nameof(Event), eventId.ToString(), after: new { registrations = regs.Count });

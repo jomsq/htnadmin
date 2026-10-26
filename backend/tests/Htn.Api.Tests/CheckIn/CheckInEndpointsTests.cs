@@ -441,7 +441,7 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
         var board = await factory.SignedInAsync(PersonLevel.Board);
         var ev = await PublishedAsync(board);
         var other = await PublishedAsync(board);
-        var tag = "Zq" + Guid.NewGuid().ToString("N")[..6];
+        var tag = LetterTag("Zq");
         var maria = await PaidAsync(factory, board, ev, first: "Maria", last: tag);
         var juan = (await RegisterAsync(factory, board, ev.Id, ev.TicketId, paid: false, people: [Person(first: "Juan", last: tag)]))[0];
         await PaidAsync(factory, board, other, first: "Maria", last: tag); // other event: never listed
@@ -478,10 +478,12 @@ public sealed class CheckInEndpointsTests(HtnApiFactory factory) : IClassFixture
     public async Task Search_is_capped_at_20()
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
-        var ev = await PublishedAsync(board, ticket: Ticket("Big team", 1000m, 10, groupSize: 25));
-        var tag = "Cap" + Guid.NewGuid().ToString("N")[..6];
-        await RegisterAsync(factory, board, ev.Id, ev.TicketId, paid: false,
-            people: [Person(last: tag), .. Enumerable.Range(0, 24).Select(i => Member(first: "P" + i, last: tag))]);
+        // Groups over 20 are hidden tickets (manual registration only).
+        var ev = await PublishedAsync(board);
+        var big = (await AddTicketAsync(board, ev.Id, Ticket("Big team", 1000m, 10, groupSize: 25, visibility: "Hidden"))).Id();
+        var tag = LetterTag("Cap");
+        await RegisterAsync(factory, board, ev.Id, big, paid: false,
+            people: [Person(last: tag), .. Enumerable.Range(0, 24).Select(i => Member(first: "P" + (char)('a' + i), last: tag))]);
         var hits = await ApiClient.JsonAsync(await board.GetAsync($"/api/events/{ev.Id}/check-in/search?q={tag}"));
         Assert.Equal(20, hits.GetArrayLength());
     }

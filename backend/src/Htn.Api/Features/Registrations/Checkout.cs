@@ -33,6 +33,12 @@ public enum CheckoutError
 
     /// <summary>mark-paid named a payment account that doesn't exist, is inactive, or doesn't match the method.</summary>
     InvalidPaymentAccount,
+
+    /// <summary>A manual registration marked paid at once doesn't fit (capacity or quantity) and has no override reason.</summary>
+    CapacityExceeded,
+
+    /// <summary>Marked paid as a comp while money is due, without a reason.</summary>
+    CompReasonRequired,
 }
 
 public sealed record CheckoutInput(
@@ -44,8 +50,9 @@ public sealed record CheckoutResult(Registration? Registration, CheckoutError Er
 
 /// <summary>
 /// Creates a registration. Capacity, ticket quantity and voucher limits are checked and the rows written in one
-/// transaction that holds a row lock on the event (<c>SELECT … FOR UPDATE</c>), so concurrent checkouts for the same event
-/// run one after another and can't oversell. Participant IDs are random and checked against the event's existing
+/// transaction that holds a row lock on the event (<c>SELECT … FOR NO KEY UPDATE</c>, see <see cref="EventLock"/>), so
+/// concurrent checkouts and every other usage-dependent write for the same event run one after another and can't oversell.
+/// Lock order rule: the event row first, always, then anything else. Participant IDs are random and checked against the event's existing
 /// IDs under the same lock; the unique index is the backstop, retried with fresh IDs.
 /// </summary>
 public sealed class Checkout(
@@ -89,7 +96,8 @@ public sealed class Checkout(
     {
         // Serializes every checkout of this event until commit. Counts read below are current (READ COMMITTED takes a
         // fresh snapshot per statement) and can't change before this transaction ends.
-        var locked = await db.Events.FromSql($"SELECT *, xmin FROM events WHERE id = {input.EventId} FOR UPDATE").AsNoTracking().ToListAsync(ct);
+        // NO KEY UPDATE: conflicts with the other writers' lock but not with foreign-key checks (FOR KEY SHARE) on the event.
+        var locked = await db.Events.FromSql($"SELECT *, xmin FROM events WHERE id = {input.EventId} FOR NO KEY UPDATE").AsNoTracking().ToListAsync(ct);
         if (locked is not [var ev]) return new CheckoutResult(null, CheckoutError.RegistrationClosed);
 
         if (input.IdempotencyKey is { } key)
@@ -111,7 +119,7 @@ public sealed class Checkout(
         if (isPublic && !PublicRegistrationViews.IsOnSalePublicly(ticket, ev, now)) return new CheckoutResult(null, CheckoutError.TicketUnavailable);
         if (input.People.Count != ticket.GroupSize) return new CheckoutResult(null, CheckoutError.GroupSizeMismatch);
 
-        var usage = await EventUsage.ForEventAsync(db, ev.Id, ct);
+        var usage = await EventUsage.ForEventAsync(db, ev.Id, now, ct);
         Voucher? voucher = null;
         if (!string.IsNullOrWhiteSpace(input.VoucherCode))
         {
@@ -121,11 +129,22 @@ public sealed class Checkout(
                 return new CheckoutResult(null, CheckoutError.InvalidVoucher);
         }
 
-        if (usage.EventSold(ev.Id) + ticket.GroupSize > ev.Capacity || usage.TicketSold(ticket.Id) + 1 > ticket.Quantity)
-            return new CheckoutResult(null, CheckoutError.SoldOut);
+        var overCapacity = usage.EventSold(ev.Id) + ticket.GroupSize > ev.Capacity || usage.TicketSold(ticket.Id) + 1 > ticket.Quantity;
+        var overrideReason = RegistrationRules.Clean(input.MarkPaid?.OverrideCapacityReason);
+        if (overCapacity)
+        {
+            // Public checkouts and unpaid manual ones are simply sold out. An admin taking payment at the desk may go over
+            // with a reason (audited), like marking an overdue registration paid.
+            if (input.MarkPaid is null) return new CheckoutResult(null, CheckoutError.SoldOut);
+            if (overrideReason is null) return new CheckoutResult(null, CheckoutError.CapacityExceeded);
+        }
 
-        if (input.MarkPaid is { } pay && await PaymentAccountError(db, pay.Method, pay.PaymentAccountId, ct))
-            return new CheckoutResult(null, CheckoutError.InvalidPaymentAccount);
+        if (input.MarkPaid is { } pay)
+        {
+            if (await PaymentAccountError(db, pay.Method, pay.PaymentAccountId, ct)) return new CheckoutResult(null, CheckoutError.InvalidPaymentAccount);
+            if (pay.Method == PaymentMethod.Comp && RegistrationTotals.For(ticket.Price, voucher).Total > 0 && RegistrationRules.Clean(pay.Reason) is null)
+                return new CheckoutResult(null, CheckoutError.CompReasonRequired);
+        }
 
         var participantIds = await NewParticipantIdsAsync(ev.Id, input.People.Count, ct);
         var hours = ev.PaymentDeadlineHours ?? await db.OrgSettings.AsNoTracking()
@@ -141,7 +160,9 @@ public sealed class Checkout(
             var payment = reg.MarkPaid(m?.Method ?? PaymentMethod.Comp, m?.PaymentAccountId, m?.Reference, m?.ReceivedAt, input.ActorId, now);
             db.Payments.Add(payment);
             audit.Record(input.ActorId, "registration.mark_paid", nameof(Registration), reg.Id.ToString(),
-                new { status = RegistrationStatus.PendingPayment }, RegistrationAudit.Payment(reg, payment));
+                new { status = RegistrationStatus.PendingPayment },
+                RegistrationAudit.Payment(reg, payment, overCapacity ? overrideReason : null),
+                RegistrationRules.Clean(m?.Reason));
             RegistrationOutbox.QueueTickets(db, reg, now);
         }
         else
@@ -191,11 +212,12 @@ internal static class RegistrationOutbox
     /// One ticket email per attendee to their own address. For a group, the buyer also gets a copy of every member's
     /// ticket (unless the member used the buyer's address).
     /// </summary>
-    public static int QueueTickets(HtnDbContext db, Registration reg, DateTimeOffset at)
+    /// <param name="notCheckedInOnly">Resend for a group already partly in: only the members who haven't checked in.</param>
+    public static int QueueTickets(HtnDbContext db, Registration reg, DateTimeOffset at, bool notCheckedInOnly = false)
     {
         var buyer = reg.Buyer;
         var queued = 0;
-        foreach (var a in reg.Attendees.OrderBy(a => a.SortOrder))
+        foreach (var a in reg.Attendees.Where(a => !notCheckedInOnly || a.CheckedInAt is null).OrderBy(a => a.SortOrder))
         {
             db.Outbox.Add(OutboxProcessor.TicketEmail(a.Id, a.Email, a.TicketVersion, at));
             queued++;
@@ -233,8 +255,9 @@ internal static class RegistrationAudit
         r.ConsentVersion, participantIds = r.Attendees.OrderBy(a => a.SortOrder).Select(a => a.ParticipantId).ToList(),
     };
 
-    public static object Payment(Registration r, Payment p) => new
+    public static object Payment(Registration r, Payment p, string? overrideCapacityReason = null) => new
     {
         status = r.Status, paymentId = p.Id, p.Method, p.PaymentAccountId, p.Reference, p.Amount, p.ReceivedAt,
+        overrideCapacityReason,
     };
 }

@@ -29,6 +29,9 @@ public sealed class TicketType
     public const int MinGroupSize = 1;
     public const int MaxGroupSize = 50;
 
+    /// <summary>Largest group sold on the public page (hidden tickets for manual registration go up to <see cref="MaxGroupSize"/>).</summary>
+    public const int MaxPublicGroupSize = 20;
+
     private TicketType() { }
 
     public Guid Id { get; private set; }
@@ -113,6 +116,8 @@ public sealed class TicketType
             throw new DomainException("Price must be ₱0 to ₱1,000,000 (centavos at most).");
         if (quantity is < MinQuantity or > MaxQuantity) throw new DomainException($"Quantity must be {MinQuantity} to {MaxQuantity}.");
         if (groupSize is < MinGroupSize or > MaxGroupSize) throw new DomainException($"Group size must be {MinGroupSize} to {MaxGroupSize}.");
+        if (visibility == TicketVisibility.Public && groupSize > MaxPublicGroupSize)
+            throw new DomainException($"A public ticket has at most {MaxPublicGroupSize} people. Use a hidden ticket for larger groups.");
         if (salesStartsAt is { } s && salesEndsAt is { } e && e <= s) throw new DomainException("Sales must end after they start.");
         if (!Enum.IsDefined(visibility)) throw new DomainException("Unknown visibility.");
         Name = n;

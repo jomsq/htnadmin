@@ -154,4 +154,72 @@ public static class FileSignatures
         }
         return null;
     }
+
+    /// <summary>
+    /// Removes metadata that can carry personal data (GPS position, device, names, comments) without re-encoding:
+    /// JPEG APP1–APP15 and COM segments (APP0/JFIF stays), PNG tEXt, iTXt, zTXt and eXIf chunks. Anything that doesn't
+    /// parse cleanly is returned unchanged (the caller has already checked it is a PNG/JPEG of an acceptable size).
+    /// </summary>
+    public static byte[] StripMetadata(byte[] data)
+    {
+        if (IsPng(data)) return StripPng(data) ?? data;
+        if (IsJpeg(data)) return StripJpeg(data) ?? data;
+        return data;
+    }
+
+    private static byte[]? StripPng(byte[] data)
+    {
+        using var output = new MemoryStream(data.Length);
+        output.Write(data, 0, 8);
+        var i = 8;
+        while (i + 12 <= data.Length)
+        {
+            var length = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(i, 4));
+            if (length > int.MaxValue || i + 12 + (long)length > data.Length) return null;
+            var type = System.Text.Encoding.ASCII.GetString(data, i + 4, 4);
+            var total = 12 + (int)length;
+            if (type is not ("tEXt" or "iTXt" or "zTXt" or "eXIf")) output.Write(data, i, total);
+            i += total;
+            if (type == "IEND") return output.ToArray();
+        }
+        return null;
+    }
+
+    private static byte[]? StripJpeg(byte[] data)
+    {
+        using var output = new MemoryStream(data.Length);
+        output.Write(data, 0, 2); // SOI
+        var i = 2;
+        while (i < data.Length)
+        {
+            if (data[i] != 0xFF) return null;
+            var start = i;
+            while (i < data.Length && data[i] == 0xFF) i++;
+            if (i >= data.Length) return null;
+            var marker = data[i++];
+            if (marker == 0x01 || marker is >= 0xD0 and <= 0xD7)
+            {
+                output.Write(data, start, i - start);
+                continue;
+            }
+            if (marker == 0xD9) // EOI
+            {
+                output.Write(data, start, i - start);
+                return output.ToArray();
+            }
+            if (i + 2 > data.Length) return null;
+            var length = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(i, 2));
+            if (length < 2 || i + length > data.Length) return null;
+            if (marker == 0xDA)
+            {
+                // Start of scan: the entropy-coded data and everything after it are copied as they are.
+                output.Write(data, start, data.Length - start);
+                return output.ToArray();
+            }
+            var isMetadata = marker is >= 0xE1 and <= 0xEF || marker == 0xFE;
+            if (!isMetadata) output.Write(data, start, i + length - start);
+            i += length;
+        }
+        return null;
+    }
 }

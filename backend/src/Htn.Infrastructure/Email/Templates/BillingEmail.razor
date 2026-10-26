@@ -1,7 +1,7 @@
 <EmailLayout Title="@($"Complete your payment for {EventName}")" Preheader="@($"Send {Amount} with reference {ParticipantId} before {Deadline}.")" BrandColor="@BrandColor" LogoCid="@LogoCid" Heading="@EventName">
   <h1 style="margin:0 0 12px;font-size:22px;line-height:1.3;color:#111827;">Complete your payment, @FirstName</h1>
   <p style="margin-top:0;">
-    Thanks for registering. Your seat is held for @DeadlineHours hours. Send <strong>@Amount</strong> with reference
+    Thanks for registering. Your seat is held for @DeadlineHours hours; after that it may be released to someone else. Send <strong>@Amount</strong> with reference
     <strong style="font-family:Menlo,Consolas,monospace;">@ParticipantId</strong> in the message.
   </p>
 

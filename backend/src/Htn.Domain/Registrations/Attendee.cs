@@ -49,6 +49,10 @@ public sealed class Attendee
         if (string.IsNullOrWhiteSpace(d.FirstName) || string.IsNullOrWhiteSpace(d.LastName))
             throw new DomainException("First and last name are required.");
         if (!RegistrationForm.IsEmail(d.Email)) throw new DomainException("A valid email is required.");
+        if (!RegistrationForm.IsValidName(d.FirstName) || !RegistrationForm.IsValidName(Blank(d.MiddleName)) || !RegistrationForm.IsValidName(d.LastName))
+            throw new DomainException(RegistrationForm.NameMessage);
+        if (!RegistrationForm.IsValidOrgText(Blank(d.Occupation)) || !RegistrationForm.IsValidOrgText(Blank(d.Company)))
+            throw new DomainException(RegistrationForm.OrgTextMessage);
         if (d.Mobile is not null && MobileNumber.Normalize(d.Mobile) != d.Mobile) throw new DomainException("Mobile must be +63 followed by 10 digits.");
         if (d.Gender is not null && !RegistrationForm.Genders.Contains(d.Gender)) throw new DomainException("Unknown gender option.");
         if (d.ShirtSize is not null && !RegistrationForm.ShirtSizes.Contains(d.ShirtSize)) throw new DomainException("Unknown shirt size.");

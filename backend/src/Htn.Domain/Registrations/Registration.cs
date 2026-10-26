@@ -76,6 +76,15 @@ public sealed class Registration
         status == RegistrationStatus.PendingPayment && deadline is { } d && now > d;
 
     /// <summary>
+    /// Holds seats, ticket quantity and voucher use: not cancelled and not overdue. An overdue registration stays
+    /// PendingPayment (it can still be paid) but releases its seat; marking it paid re-checks capacity.
+    /// </summary>
+    public bool HoldsSeatAt(DateTimeOffset now) => Status != RegistrationStatus.Cancelled && !IsOverdueAt(now);
+
+    /// <summary>Marking a registration with money due as a comp needs a reason (audited).</summary>
+    public bool CompNeedsReason(PaymentMethod method) => method == PaymentMethod.Comp && Total > 0;
+
+    /// <summary>
     /// A new checkout. <paramref name="people"/> and <paramref name="participantIds"/> are in form order (the buyer first)
     /// and must match the ticket's <paramref name="groupSize"/>. A zero total goes straight to Paid via <see cref="MarkPaid"/>
     /// (done by the caller, so the payment row is recorded too).
@@ -95,6 +104,8 @@ public sealed class Registration
         if (string.IsNullOrWhiteSpace(consentVersion)) throw new DomainException("Data Privacy Act consent is required.");
 
         var totals = RegistrationTotals.For(ticket.Price, voucher);
+        if (totals.Total > 0 && (deadline is not { } due || due <= at))
+            throw new DomainException("A registration with an amount due needs a payment deadline after it is created.");
         var r = new Registration
         {
             Id = Guid.CreateVersion7(at),

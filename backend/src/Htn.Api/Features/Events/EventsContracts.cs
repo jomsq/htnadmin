@@ -114,6 +114,9 @@ public sealed class TicketTypeRequestValidator : AbstractValidator<TicketTypeReq
             .InclusiveBetween(TicketType.MinQuantity, TicketType.MaxQuantity).WithMessage($"Use {TicketType.MinQuantity} to {TicketType.MaxQuantity:N0}.");
         RuleFor(x => x.GroupSize)
             .InclusiveBetween(TicketType.MinGroupSize, TicketType.MaxGroupSize).WithMessage($"Use {TicketType.MinGroupSize} to {TicketType.MaxGroupSize} people.");
+        RuleFor(x => x.GroupSize)
+            .LessThanOrEqualTo(TicketType.MaxPublicGroupSize).When(x => (x.Visibility ?? TicketVisibility.Public) == TicketVisibility.Public)
+            .WithMessage($"A public ticket has at most {TicketType.MaxPublicGroupSize} people. Make it hidden for larger groups.");
         RuleFor(x => x.SalesEndsAt).Must((x, end) => end is null || x.SalesStartsAt is not { } start || end > start)
             .WithMessage("Sales must end after they start.");
         RuleFor(x => x.Visibility).IsInEnum().WithMessage("Choose public or hidden.");

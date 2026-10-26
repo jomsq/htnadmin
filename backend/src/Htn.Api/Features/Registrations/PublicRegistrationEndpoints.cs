@@ -50,13 +50,14 @@ internal static class PublicRegistrationViews
 public static class PublicRegistrationEndpoints
 {
     /// <summary>Uploads kept per registration (each up to 5 MB), so a leaked link can't fill the disk.</summary>
-    public const int MaxProofsPerRegistration = 10;
+    public const int MaxProofsPerRegistration = 3;
 
     public static RouteGroupBuilder MapPublicRegistration(this IEndpointRouteBuilder app)
     {
         var g = app.MapGroup("/api/public").WithTags("Public registration").AllowAnonymous().AllowWithoutTwoFactor();
         g.MapGet("/events/{slug}", GetEvent).RequireRateLimiting(PublicRateLimiting.Read);
-        g.MapPost("/events/{slug}/voucher-check", CheckVoucher).RequireRateLimiting(PublicRateLimiting.Voucher).Validate<VoucherCheckRequest>();
+        // Voucher attempts are counted by PublicAttemptLimiter (shared with registrations that carry a code).
+        g.MapPost("/events/{slug}/voucher-check", CheckVoucher).Validate<VoucherCheckRequest>();
         g.MapPost("/events/{slug}/registrations", Register).RequireRateLimiting(PublicRateLimiting.Register);
         g.MapGet("/proof/{token}", GetProof).RequireRateLimiting(PublicRateLimiting.Proof);
         g.MapPost("/proof/{token}", UploadProof).RequireRateLimiting(PublicRateLimiting.Proof);
@@ -69,7 +70,7 @@ public static class PublicRegistrationEndpoints
         var ev = await PublicRegistrationViews.FindPublicAsync(db, slug, now, ct);
         if (ev is null) return TypedResults.NotFound();
 
-        var usage = await EventUsage.ForEventAsync(db, ev.Id, ct);
+        var usage = await EventUsage.ForEventAsync(db, ev.Id, now, ct);
         var tickets = (await db.TicketTypes.AsNoTracking().Where(t => t.EventId == ev.Id).OrderBy(t => t.SortOrder).ThenBy(t => t.Id).ToListAsync(ct))
             .Where(t => PublicRegistrationViews.IsOnSalePublicly(t, ev, now))
             .Select(t => new PublicTicketDto(t.Id, t.Name, t.Price, t.GroupSize, PublicRegistrationViews.Remaining(t, ev, usage), null))
@@ -83,8 +84,10 @@ public static class PublicRegistrationEndpoints
     }
 
     /// <summary>Same answer for unknown, expired, used-up, inactive and out-of-scope codes: { valid: false }.</summary>
-    private static async Task<IResult> CheckVoucher(string slug, VoucherCheckRequest req, HtnDbContext db, TimeProvider clock, CancellationToken ct)
+    private static async Task<IResult> CheckVoucher(
+        string slug, VoucherCheckRequest req, HttpContext http, PublicAttemptLimiter limits, HtnDbContext db, TimeProvider clock, CancellationToken ct)
     {
+        if (!limits.TryVoucher(http)) return AuthRateLimiting.TooMany();
         var now = clock.GetUtcNow();
         var ev = await PublicRegistrationViews.FindPublicAsync(db, slug, now, ct);
         if (ev is null) return TypedResults.NotFound();
@@ -99,7 +102,7 @@ public static class PublicRegistrationEndpoints
             ? await db.Vouchers.AsNoTracking().SingleOrDefaultAsync(v => v.EventId == ev.Id && v.Code == code, ct)
             : null;
         if (voucher is null) return TypedResults.Ok(new VoucherCheckDto(false, 0m, ticket.Price));
-        var used = (await EventUsage.ForEventAsync(db, ev.Id, ct)).VoucherUsed(voucher.Id);
+        var used = (await EventUsage.ForEventAsync(db, ev.Id, now, ct)).VoucherUsed(voucher.Id);
         if (voucher.Check(ticket.Id, used, now) != VoucherError.None) return TypedResults.Ok(new VoucherCheckDto(false, 0m, ticket.Price));
         var totals = RegistrationTotals.For(ticket.Price, voucher);
         return TypedResults.Ok(new VoucherCheckDto(true, totals.Discount, totals.Total));
@@ -107,7 +110,7 @@ public static class PublicRegistrationEndpoints
 
     private static async Task<IResult> Register(
         string slug, PublicRegistrationRequest? req, IValidator<PublicRegistrationRequest> validator, HtnDbContext db, Checkout checkout,
-        EmailRateLimiter emailLimits, TimeProvider clock, CancellationToken ct)
+        EmailRateLimiter emailLimits, PublicAttemptLimiter ipLimits, HttpContext http, TimeProvider clock, CancellationToken ct)
     {
         if (req is null) return Problems.Result(StatusCodes.Status400BadRequest, "Request body is required.");
         // Honeypot: people never see the field; bots fill it. Nothing is stored and the reply doesn't say why.
@@ -117,12 +120,15 @@ public static class PublicRegistrationEndpoints
         var validation = await validator.ValidateAsync(req, ct);
         if (!validation.IsValid) return TypedResults.ValidationProblem(validation.ToDictionary());
 
-        // Counted before any lookup, so the limit is the same whatever the email.
-        if (!emailLimits.TryRegister(req.Attendees![0].Email!)) return AuthRateLimiting.TooMany();
-
         var now = clock.GetUtcNow();
         var ev = await PublicRegistrationViews.FindPublicAsync(db, slug, now, ct);
         if (ev is null) return TypedResults.NotFound();
+
+        // Limits are consumed only for a real attempt (valid body, open event), and before any account or registration
+        // lookup, so the answer is the same whatever the email.
+        if (!emailLimits.TryRegister(req.Attendees![0].Email!)) return AuthRateLimiting.TooMany();
+        if (!ipLimits.TryEmails(http, req.Attendees.Count)) return AuthRateLimiting.TooMany();
+        if (!string.IsNullOrWhiteSpace(req.VoucherCode) && !ipLimits.TryVoucher(http)) return AuthRateLimiting.TooMany();
 
         var result = await checkout.RunAsync(new CheckoutInput(
             ev.Id, req.TicketTypeId!.Value, req.VoucherCode, req.Attendees.Select(RegistrationRules.ToDetails).ToList(),
@@ -168,15 +174,7 @@ public static class PublicRegistrationEndpoints
     {
         request.HttpContext.Response.Headers.CacheControl = "no-store";
         var now = clock.GetUtcNow();
-        var found = await FindByTokenAsync(db, token, now, ct);
-        if (found is not { } f) return TypedResults.NotFound();
-        var reg = f.Reg;
-        if (reg.Status != RegistrationStatus.PendingPayment)
-            return Problems.Result(StatusCodes.Status409Conflict, "This registration is already paid.", code: "not_pending");
-
-        if (await db.PaymentProofs.CountAsync(p => p.RegistrationId == reg.Id, ct) >= MaxProofsPerRegistration)
-            return Problems.Result(StatusCodes.Status409Conflict, "Too many uploads",
-                "This registration already has several proofs. Contact the organizers if you need to send another.", "too_many_uploads");
+        if (await FindByTokenAsync(db, token, now, ct) is null) return TypedResults.NotFound();
 
         var (file, error) = await Uploads.ReadSingleFileAsync(request, "file", StoredFilePurposes.PaymentProofMaxBytes,
             "The image must be 5 MB or smaller.", ct);
@@ -190,17 +188,34 @@ public static class PublicRegistrationEndpoints
         if (image.Width > StoredFilePurposes.PaymentProofMaxDimension || image.Height > StoredFilePurposes.PaymentProofMaxDimension)
             return Problems.Field("file", "The image is too large. Upload a screenshot instead.", "image_too_large");
 
+        // Location, device and comments in EXIF / PNG text chunks are personal data nobody asked for: dropped before storing.
+        var bytes = FileSignatures.StripMetadata(file.Bytes);
+
+        // Count check and insert under a row lock on the registration, so parallel uploads can't pass the cap together
+        // (and a mark-paid racing the upload is seen).
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        if (await FindByTokenAsync(db, token, now, ct) is not { } f) return TypedResults.NotFound();
+        var reg = f.Reg;
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM registrations WHERE id = {reg.Id} FOR UPDATE", ct);
+        await db.Entry(reg).ReloadAsync(ct);
+        if (reg.Status != RegistrationStatus.PendingPayment)
+            return Problems.Result(StatusCodes.Status409Conflict, "This registration is already paid.", code: "not_pending");
+        if (await db.PaymentProofs.CountAsync(p => p.RegistrationId == reg.Id, ct) >= MaxProofsPerRegistration)
+            return Problems.Result(StatusCodes.Status409Conflict, "Too many uploads",
+                "This registration already has several proofs. Contact the organizers if you need to send another.", "too_many_uploads");
+
         reg.EnsureAcceptsProof();
-        var sha = Convert.ToHexStringLower(SHA256.HashData(file.Bytes));
+        var sha = Convert.ToHexStringLower(SHA256.HashData(bytes));
         // The registrant's file name is not kept: it is personal data the design doesn't ask for.
-        var stored = StoredFile.Create(image.ContentType, file.Bytes.LongLength, sha, StoredFilePurposes.PaymentProof, null, now, null);
-        await storage.SaveAsync(stored.Id, file.Bytes, ct);
+        var stored = StoredFile.Create(image.ContentType, bytes.LongLength, sha, StoredFilePurposes.PaymentProof, null, now, null);
+        await storage.SaveAsync(stored.Id, bytes, ct);
         db.StoredFiles.Add(stored);
         var proof = PaymentProof.Create(reg.Id, stored.Id, reference, now);
         db.PaymentProofs.Add(proof);
         audit.Record(null, "registration.proof_uploaded", nameof(Registration), reg.Id.ToString(),
             after: new { proofId = proof.Id, fileId = stored.Id, stored.ContentType, stored.SizeBytes, stored.Sha256, proof.Reference });
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return TypedResults.NoContent();
     }
 }
@@ -216,6 +231,9 @@ internal static class RegistrationProblems
         CheckoutError.GroupSizeMismatch => Problems.Field("attendees", "Enter every member of the group.", "group_size"),
         CheckoutError.InvalidPaymentAccount => Problems.Field("paymentAccountId", "Choose an active account that matches the payment method.",
             "invalid_payment_account"),
+        CheckoutError.CapacityExceeded => Problems.Result(StatusCodes.Status409Conflict, "Not enough seats",
+            "The event or this ticket is full. Give an override reason to register and take the payment anyway.", "capacity_exceeded"),
+        CheckoutError.CompReasonRequired => Problems.Field("reason", RegistrationsEndpoints.CompReasonMessage, "reason_required"),
         _ => Problems.Result(StatusCodes.Status409Conflict, "Registration closed", "This event isn't taking these registrations.", "registration_closed"),
     };
 }

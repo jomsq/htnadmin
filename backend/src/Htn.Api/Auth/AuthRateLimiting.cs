@@ -25,13 +25,14 @@ public static class AuthRateLimiting
     public static IServiceCollection AddHtnRateLimiting(this IServiceCollection services)
     {
         services.AddSingleton<EmailRateLimiter>();
+        services.AddSingleton<PublicAttemptLimiter>();
         services.AddRateLimiter(o =>
         {
             o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             o.OnRejected = (ctx, _) => new ValueTask(TooManyAsync(ctx.HttpContext));
             foreach (var policy in Policies)
                 o.AddPolicy(policy, http => PerIp(policy, http, s => s.AuthPermitLimit, s => s.AuthWindowSeconds));
-            foreach (var policy in PublicRateLimiting.Policies)
+            foreach (var policy in PublicRateLimiting.PolicyNames)
                 o.AddPolicy(policy, http => PerIp(policy, http, s => PublicRateLimiting.PermitLimit(policy, s), s => s.PublicWindowSeconds));
             o.AddPolicy(CheckInRateLimiting.Scan, http => CheckInRateLimiting.PerUser(CheckInRateLimiting.Scan, http, s => s.CheckInPermitLimit));
             o.AddPolicy(CheckInRateLimiting.Search, http => CheckInRateLimiting.PerUser(CheckInRateLimiting.Search, http, s => s.CheckInSearchPermitLimit));
@@ -39,11 +40,20 @@ public static class AuthRateLimiting
         return services;
     }
 
-    internal static string ClientIp(HttpContext http)
+    /// <summary>
+    /// The rate-limit key for the client address. IPv4-mapped IPv6 is normalized to IPv4, and native IPv6 is reduced to
+    /// its /64 prefix (one subscriber usually gets a whole /64, so per-address buckets would be trivial to rotate).
+    /// </summary>
+    internal static string ClientIp(HttpContext http) => ClientKey(http.Connection.RemoteIpAddress);
+
+    public static string ClientKey(System.Net.IPAddress? ip)
     {
-        var ip = http.Connection.RemoteIpAddress;
-        // Normalize IPv4-mapped IPv6 so one client can't get two buckets.
-        return ip is null ? "unknown" : (ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip).ToString();
+        if (ip is null) return "unknown";
+        if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
+        if (ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6) return ip.ToString();
+        var bytes = ip.GetAddressBytes();
+        Array.Clear(bytes, 8, 8);
+        return new System.Net.IPAddress(bytes) + "/64";
     }
 
     private static RateLimitPartition<string> PerIp(
@@ -127,7 +137,8 @@ public static class PublicRateLimiting
     public const string Register = "public-register";
     public const string Proof = "public-proof";
 
-    public static readonly IReadOnlyList<string> Policies = [Read, Voucher, Register, Proof];
+    /// <summary>Endpoint policies. Voucher attempts are counted by <see cref="PublicAttemptLimiter"/> instead (shared bucket).</summary>
+    public static readonly IReadOnlyList<string> PolicyNames = [Read, Register, Proof];
 
     public static int PermitLimit(string policy, RateLimitSettings s) => policy switch
     {
@@ -136,6 +147,50 @@ public static class PublicRateLimiting
         Register => s.PublicRegisterPermitLimit,
         _ => s.PublicProofPermitLimit,
     };
+}
+
+/// <summary>
+/// Per-IP buckets the public endpoints consume by hand: voucher attempts (voucher-check and registrations carrying a
+/// code share one bucket, so the registration endpoint can't be used to brute-force codes past the check's limit), and
+/// emails triggered by public checkouts (one permit per attendee).
+/// </summary>
+public sealed class PublicAttemptLimiter : IDisposable
+{
+    private readonly PartitionedRateLimiter<string> _vouchers;
+    private readonly PartitionedRateLimiter<string> _emails;
+    private readonly int _emailPermits;
+
+    public PublicAttemptLimiter(IOptions<RateLimitSettings> options)
+    {
+        var s = options.Value;
+        _vouchers = Create(s.PublicVoucherPermitLimit, s.PublicWindowSeconds);
+        _emailPermits = Math.Max(1, s.PublicEmailsPerIpPermitLimit);
+        _emails = Create(_emailPermits, s.PublicEmailsPerIpWindowSeconds);
+    }
+
+    public bool TryVoucher(HttpContext http) => TryAcquire(_vouchers, http, 1);
+
+    public bool TryEmails(HttpContext http, int count) => count <= _emailPermits && TryAcquire(_emails, http, count);
+
+    private static bool TryAcquire(PartitionedRateLimiter<string> limiter, HttpContext http, int permits)
+    {
+        using var lease = limiter.AttemptAcquire(AuthRateLimiting.ClientIp(http), Math.Max(1, permits));
+        return lease.IsAcquired;
+    }
+
+    private static PartitionedRateLimiter<string> Create(int permits, int windowSeconds) =>
+        PartitionedRateLimiter.Create<string, string>(key => RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = Math.Max(1, permits),
+            Window = TimeSpan.FromSeconds(Math.Max(1, windowSeconds)),
+            QueueLimit = 0,
+        }));
+
+    public void Dispose()
+    {
+        _vouchers.Dispose();
+        _emails.Dispose();
+    }
 }
 
 /// <summary>

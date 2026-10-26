@@ -17,6 +17,7 @@ public sealed class Event
     public const decimal MaxMembershipFee = 100_000m;
     public const int MinMembershipYear = 2000;
     public const int MaxMembershipYear = 2100;
+    public const int MaxEmailPaymentAccounts = 10;
 
     private Event() { }
 
@@ -127,8 +128,11 @@ public sealed class Event
             throw new DomainException("The accent color needs at least 4.5:1 contrast with white text.");
         if (deadlineHours is { } h && (h < OrgSettings.MinPaymentDeadlineHours || h > OrgSettings.MaxPaymentDeadlineHours))
             throw new DomainException($"Use {OrgSettings.MinPaymentDeadlineHours} to {OrgSettings.MaxPaymentDeadlineHours} hours.");
+        var accounts = paymentAccountIds.Distinct().ToList();
+        if (accounts.Count > MaxEmailPaymentAccounts || accounts.Contains(Guid.Empty))
+            throw new DomainException($"Choose at most {MaxEmailPaymentAccounts} payment accounts.");
         EmailAccentColor = accentColor?.ToUpperInvariant();
-        EmailPaymentAccountIds = paymentAccountIds.Distinct().ToList();
+        EmailPaymentAccountIds = accounts;
         PaymentDeadlineHours = deadlineHours;
         Touch(at, actorId);
     }

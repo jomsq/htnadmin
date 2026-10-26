@@ -59,6 +59,22 @@ public static class HostingSetup
         return cert;
     }
 
+    /// <summary>
+    /// Outside Development, <c>App:PublicBaseUrl</c> (the base of invite, reset, proof and registration links in emails)
+    /// must be an absolute https URL, so tokens in those links never travel in clear text.
+    /// </summary>
+    public static void EnsurePublicBaseUrl(IConfiguration config, IHostEnvironment env)
+    {
+        if (env.IsDevelopment()) return;
+        var value = config[$"{AppLinkOptions.Section}:PublicBaseUrl"];
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps && string.IsNullOrEmpty(uri.Query)
+            && string.IsNullOrEmpty(uri.Fragment))
+            return;
+        throw new InvalidOperationException(
+            $"App:PublicBaseUrl must be an absolute https URL in the {env.EnvironmentName} environment (got '{value}'). " +
+            "Set App__PublicBaseUrl (PUBLIC_BASE_URL in docker-compose.prod.yml) to the public https address, e.g. https://admin.hackthenorth.ph.");
+    }
+
     /// <summary>Outside Development, a missing MAILTRAP_API_TOKEN would silently drop invites and resets; refuse to start.</summary>
     public static void EnsureEmailConfigured(IConfiguration config, IHostEnvironment env)
     {

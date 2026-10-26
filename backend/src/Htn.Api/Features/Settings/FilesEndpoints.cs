@@ -24,7 +24,7 @@ public static class FilesEndpoints
     public static RouteGroupBuilder MapPublicFiles(this IEndpointRouteBuilder app)
     {
         var g = app.MapGroup("/api/public/files").WithTags("Files");
-        g.MapGet("/{id:guid}", GetPublic).AllowAnonymous().AllowWithoutTwoFactor();
+        g.MapGet("/{id:guid}", GetPublic).AllowAnonymous().AllowWithoutTwoFactor().RequireRateLimiting(PublicRateLimiting.Read);
         return g;
     }
 

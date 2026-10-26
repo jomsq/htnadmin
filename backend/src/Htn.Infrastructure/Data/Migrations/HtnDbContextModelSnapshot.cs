@@ -303,6 +303,8 @@ namespace Htn.Infrastructure.Data.Migrations
 
                             t.HasCheckConstraint("ck_events_email_accent_color", "email_accent_color IS NULL OR email_accent_color ~ '^#[0-9A-F]{6}$'");
 
+                            t.HasCheckConstraint("ck_events_email_payment_accounts", "array_position(email_payment_account_ids, NULL) IS NULL AND cardinality(email_payment_account_ids) <= 10");
+
                             t.HasCheckConstraint("ck_events_membership", "(is_main_event AND membership_fee BETWEEN 0 AND 100000 AND membership_year BETWEEN 2000 AND 2100) OR (NOT is_main_event AND membership_fee IS NULL AND membership_year IS NULL)");
 
                             t.HasCheckConstraint("ck_events_payment_deadline", "payment_deadline_hours IS NULL OR payment_deadline_hours BETWEEN 1 AND 336");
@@ -385,6 +387,9 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.HasKey("Id")
                         .HasName("pk_ticket_types");
 
+                    b.HasAlternateKey("Id", "EventId")
+                        .HasName("ak_ticket_types_id_event_id");
+
                     b.HasIndex("EventId", "SortOrder")
                         .HasDatabaseName("ix_ticket_types_event_id_sort_order");
 
@@ -392,7 +397,7 @@ namespace Htn.Infrastructure.Data.Migrations
                         {
                             t.HasCheckConstraint("ck_ticket_types_deactivated", "is_active = (deactivated_at IS NULL)");
 
-                            t.HasCheckConstraint("ck_ticket_types_group_size", "group_size BETWEEN 1 AND 50");
+                            t.HasCheckConstraint("ck_ticket_types_group_size", "group_size BETWEEN 1 AND 50 AND (visibility = 'Hidden' OR group_size <= 20)");
 
                             t.HasCheckConstraint("ck_ticket_types_price", "price BETWEEN 0 AND 1000000");
 
@@ -478,8 +483,12 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.HasKey("Id")
                         .HasName("pk_vouchers");
 
-                    b.HasIndex("EventId")
-                        .HasDatabaseName("ix_vouchers_event_id");
+                    b.HasAlternateKey("Id", "EventId")
+                        .HasName("ak_vouchers_id_event_id");
+
+                    b.HasIndex("EventId", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("ux_vouchers_event_code");
 
                     b.ToTable("vouchers", null, t =>
                         {
@@ -490,6 +499,8 @@ namespace Htn.Infrastructure.Data.Migrations
                             t.HasCheckConstraint("ck_vouchers_kind", "kind IN ('Percent', 'Fixed')");
 
                             t.HasCheckConstraint("ck_vouchers_source", "source IN ('Manual', 'SpeakerPlusOne')");
+
+                            t.HasCheckConstraint("ck_vouchers_ticket_type_ids", "array_position(ticket_type_ids, NULL) IS NULL AND cardinality(ticket_type_ids) <= 50");
 
                             t.HasCheckConstraint("ck_vouchers_usage_limit", "usage_limit IS NULL OR usage_limit BETWEEN 1 AND 100000");
 
@@ -992,6 +1003,9 @@ namespace Htn.Infrastructure.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_attendees_event_participant_id");
 
+                    b.HasIndex("RegistrationId", "EventId")
+                        .HasDatabaseName("ix_attendees_registration_id_event_id");
+
                     b.HasIndex("RegistrationId", "SortOrder")
                         .IsUnique()
                         .HasDatabaseName("ix_attendees_registration_id_sort_order");
@@ -1098,7 +1112,7 @@ namespace Htn.Infrastructure.Data.Migrations
                         {
                             t.HasCheckConstraint("ck_payments_amount", "amount >= 0");
 
-                            t.HasCheckConstraint("ck_payments_comp", "method <> 'Comp' OR (amount = 0 AND payment_account_id IS NULL)");
+                            t.HasCheckConstraint("ck_payments_comp", "(method = 'Comp') = (amount = 0) AND (method <> 'Comp' OR payment_account_id IS NULL)");
 
                             t.HasCheckConstraint("ck_payments_method", "method IN ('GCash', 'Bank', 'Cash', 'Comp')");
 
@@ -1262,25 +1276,33 @@ namespace Htn.Infrastructure.Data.Migrations
                     b.HasKey("Id")
                         .HasName("pk_registrations");
 
+                    b.HasAlternateKey("Id", "EventId")
+                        .HasName("ak_registrations_id_event_id");
+
+                    b.HasIndex("EventId")
+                        .HasDatabaseName("ix_registrations_usage")
+                        .HasFilter("status <> 'Cancelled'");
+
+                    NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("EventId"), new[] { "TicketTypeId", "VoucherId", "Seats", "Status", "Deadline" });
+
                     b.HasIndex("ProofTokenHash")
                         .IsUnique()
                         .HasDatabaseName("ux_registrations_proof_token_hash")
                         .HasFilter("proof_token_hash IS NOT NULL");
-
-                    b.HasIndex("VoucherId")
-                        .HasDatabaseName("ix_registrations_voucher_id")
-                        .HasFilter("voucher_id IS NOT NULL");
-
-                    b.HasIndex("EventId", "CreatedAt")
-                        .HasDatabaseName("ix_registrations_event_id_created_at");
 
                     b.HasIndex("EventId", "IdempotencyKey")
                         .IsUnique()
                         .HasDatabaseName("ux_registrations_event_idempotency_key")
                         .HasFilter("idempotency_key IS NOT NULL");
 
-                    b.HasIndex("TicketTypeId", "Status")
-                        .HasDatabaseName("ix_registrations_ticket_type_id_status");
+                    b.HasIndex("TicketTypeId", "EventId")
+                        .HasDatabaseName("ix_registrations_ticket_type_id_event_id");
+
+                    b.HasIndex("VoucherId", "EventId")
+                        .HasDatabaseName("ix_registrations_voucher_id_event_id");
+
+                    b.HasIndex("EventId", "CreatedAt", "Id")
+                        .HasDatabaseName("ix_registrations_event_id_created_at_id");
 
                     b.HasIndex("EventId", "Status", "Deadline")
                         .HasDatabaseName("ix_registrations_event_id_status_deadline");
@@ -1291,15 +1313,15 @@ namespace Htn.Infrastructure.Data.Migrations
 
                             t.HasCheckConstraint("ck_registrations_cancelled", "(status = 'Cancelled') = (cancelled_at IS NOT NULL) AND (cancelled_at IS NULL) = (cancel_reason IS NULL)");
 
-                            t.HasCheckConstraint("ck_registrations_checked_in", "status <> 'CheckedIn' OR checked_in_at IS NOT NULL");
+                            t.HasCheckConstraint("ck_registrations_checked_in", "(status = 'CheckedIn') = (checked_in_at IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_registrations_consent", "char_length(consent_version) > 0");
 
-                            t.HasCheckConstraint("ck_registrations_deadline", "total = 0 OR deadline IS NOT NULL");
+                            t.HasCheckConstraint("ck_registrations_deadline", "(total = 0) = (deadline IS NULL) AND (deadline IS NULL OR deadline > created_at)");
 
                             t.HasCheckConstraint("ck_registrations_manual_actor", "source = 'Public' OR created_by_id IS NOT NULL");
 
-                            t.HasCheckConstraint("ck_registrations_paid", "status NOT IN ('Paid', 'CheckedIn') OR paid_at IS NOT NULL");
+                            t.HasCheckConstraint("ck_registrations_paid", "status = 'Cancelled' OR (status IN ('Paid', 'CheckedIn')) = (paid_at IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_registrations_seats", "seats BETWEEN 1 AND 50");
 
@@ -2015,10 +2037,11 @@ namespace Htn.Infrastructure.Data.Migrations
 
                     b.HasOne("Htn.Domain.Registrations.Registration", null)
                         .WithMany("Attendees")
-                        .HasForeignKey("RegistrationId")
+                        .HasForeignKey("RegistrationId", "EventId")
+                        .HasPrincipalKey("Id", "EventId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
-                        .HasConstraintName("fk_attendees_registrations_registration_id");
+                        .HasConstraintName("fk_attendees_registrations_registration_id_event_id");
                 });
 
             modelBuilder.Entity("Htn.Domain.Registrations.Payment", b =>
@@ -2065,16 +2088,18 @@ namespace Htn.Infrastructure.Data.Migrations
 
                     b.HasOne("Htn.Domain.Events.TicketType", null)
                         .WithMany()
-                        .HasForeignKey("TicketTypeId")
+                        .HasForeignKey("TicketTypeId", "EventId")
+                        .HasPrincipalKey("Id", "EventId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
-                        .HasConstraintName("fk_registrations_ticket_types_ticket_type_id");
+                        .HasConstraintName("fk_registrations_ticket_types_ticket_type_id_event_id");
 
                     b.HasOne("Htn.Domain.Events.Voucher", null)
                         .WithMany()
-                        .HasForeignKey("VoucherId")
+                        .HasForeignKey("VoucherId", "EventId")
+                        .HasPrincipalKey("Id", "EventId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .HasConstraintName("fk_registrations_vouchers_voucher_id");
+                        .HasConstraintName("fk_registrations_vouchers_voucher_id_event_id");
                 });
 
             modelBuilder.Entity("Htn.Domain.Settings.OrgSettings", b =>

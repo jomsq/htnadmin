@@ -39,6 +39,10 @@ public static class TicketSigning
     /// <summary>Only ever used in Development when no key is configured. Anyone can forge tickets with it.</summary>
     public const string DevelopmentKey = "htn-dev-only-ticket-signing-key-do-not-use-in-production";
 
+    /// <summary>Published keys (the in-code dev key and the old docker-compose default): refused outside Development.</summary>
+    public static readonly IReadOnlyList<string> PublishedKeys =
+        [DevelopmentKey, "htn-dev-only-ticket-signing-key-not-for-production"];
+
     public static string? Configured(IConfiguration config) =>
         config[ConfigKey] is { Length: > 0 } k ? k : config[EnvironmentVariable] is { Length: > 0 } e ? e : null;
 
@@ -55,6 +59,10 @@ public static class TicketSigning
                 $"{EnvironmentVariable} is not set in the {env.EnvironmentName} environment, so ticket QR codes can't be signed. " +
                 $"Set {EnvironmentVariable} (or Tickets__SigningKey) to at least 32 random bytes, e.g. `openssl rand -base64 48`.");
         }
+        if (!env.IsDevelopment() && PublishedKeys.Contains(configured.Trim(), StringComparer.Ordinal))
+            throw new InvalidOperationException(
+                $"{EnvironmentVariable} is a published development key, so anyone could forge tickets. Set a secret one " +
+                "(at least 32 random bytes, e.g. `openssl rand -base64 48`).");
         var key = Encoding.UTF8.GetBytes(configured);
         if (key.Length < TicketTokenCodec.MinKeyBytes)
             throw new InvalidOperationException($"{EnvironmentVariable} must be at least {TicketTokenCodec.MinKeyBytes} bytes long.");

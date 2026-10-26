@@ -17,7 +17,7 @@ public sealed class CheckInTests
     {
         var ticket = TicketType.Create(EventId, "Regular", 1500m, 100, groupSize, null, null, TicketVisibility.Public, 1, Now.AddDays(-10));
         var people = Enumerable.Range(0, groupSize)
-            .Select(i => new AttendeeDetails($"P{i}", null, "Santos", null, $"p{i}@example.ph", null, null, null, null, null)).ToList();
+            .Select(i => new AttendeeDetails($"P{(char)('a' + i)}", null, "Santos", null, $"p{i}@example.ph", null, null, null, null, null)).ToList();
         var reg = Registration.Create(EventId, ticket, people, people.Select(_ => Ids.NewParticipantId()).ToList(), null,
             RegistrationSource.Public, null, RegistrationForm.ConsentVersion, Now.AddHours(48), null, Now.AddDays(-5));
         if (paid) reg.MarkPaid(PaymentMethod.Cash, null, null, null, null, Now.AddDays(-4));

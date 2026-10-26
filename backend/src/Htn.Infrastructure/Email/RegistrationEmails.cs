@@ -120,7 +120,7 @@ public sealed class RegistrationEmails(HtnDbContext db, EmailRenderer renderer, 
 
         var text = new StringBuilder();
         text.Append($"Hi {firstName},\n\n");
-        text.Append($"Thanks for registering for {ev.Name}. Your seat is held for {hours} hours.\n");
+        text.Append($"Thanks for registering for {ev.Name}. Your seat is held for {hours} hours; after that it may be released to someone else.\n");
         text.Append($"Send {EmailFormat.Peso(amount)} with reference {participantId} in the message.\n\n");
         foreach (var line in payTo)
             text.Append($"{line.Heading}: {line.AccountName}{(line.AccountNumber is null ? "" : " " + line.AccountNumber)}\n");

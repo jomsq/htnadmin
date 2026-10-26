@@ -65,6 +65,22 @@ internal static class RegistrationTestData
     public static Task<Guid> RegistrationIdAsync(HtnApiFactory factory, string participantId) =>
         factory.DbAsync(db => db.Attendees.AsNoTracking().Where(a => a.ParticipantId == participantId).Select(a => a.RegistrationId).SingleAsync());
 
+    /// <summary>
+    /// Moves a pending registration's deadline into the past (and its creation before it, which ck_registrations_deadline
+    /// requires). created_at is frozen by the registrations_guard trigger, so the trigger is off for this one statement.
+    /// </summary>
+    public static Task MakeOverdueAsync(this HtnApiFactory factory, Guid registrationId) =>
+        factory.DbAsync(async db =>
+        {
+            await using var tx = await db.Database.BeginTransactionAsync();
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE registrations DISABLE TRIGGER registrations_guard");
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE registrations SET created_at = now() - interval '3 days', consent_at = now() - interval '3 days', deadline = now() - interval '5 minutes' WHERE id = {registrationId}");
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE registrations ENABLE TRIGGER registrations_guard");
+            await tx.CommitAsync();
+            return 0;
+        });
+
     public static async Task DrainOutboxAsync(this HtnApiFactory factory)
     {
         while (await factory.ProcessOutboxAsync() > 0)

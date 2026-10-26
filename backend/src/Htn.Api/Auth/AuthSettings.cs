@@ -31,6 +31,7 @@ public sealed class RateLimitSettings
 
     /// <summary>Per client IP, per window of <see cref="PublicWindowSeconds"/>, for the public registration endpoints.</summary>
     public int PublicReadPermitLimit { get; set; } = 120;
+    /// <summary>Voucher attempts per IP: voucher checks and registrations that carry a code share this bucket.</summary>
     public int PublicVoucherPermitLimit { get; set; } = 10;
     public int PublicRegisterPermitLimit { get; set; } = 10;
     public int PublicProofPermitLimit { get; set; } = 20;
@@ -43,6 +44,13 @@ public sealed class RateLimitSettings
     public int CheckInSearchPermitLimit { get; set; } = 120;
 
     public int CheckInWindowSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// Emails a client IP can trigger through public checkouts (one per attendee) per window: limits using the form to
+    /// mail-bomb other people's addresses.
+    /// </summary>
+    public int PublicEmailsPerIpPermitLimit { get; set; } = 30;
+    public int PublicEmailsPerIpWindowSeconds { get; set; } = 60 * 60;
 
     /// <summary>Public registrations per normalized buyer email.</summary>
     public int RegisterPerEmailPermitLimit { get; set; } = 5;

@@ -179,13 +179,13 @@ export type ProofInfo = z.infer<typeof proofInfoSchema>
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export const NAME_MAX = 80
-/** Same rules as the API: letters (any language), accents, spaces and . ' - ; starts with a letter. */
-const NAME_RE = /^[\p{L}\p{M}][\p{L}\p{M} .'-]*$/u
+/** Same rules as the API: letters (any language), accents, spaces and . , ' - ; starts with a letter. */
+const NAME_RE = /^[\p{L}\p{M}][\p{L}\p{M} .,'’-]*$/u
 /** Occupation and company also allow digits and & , ( ) / */
 const ORG_TEXT_RE = /^[\p{L}\p{M}\p{N} .'&,()/-]*$/u
 const LINK_OR_MARKUP_RE = /:\/\/|[@<>]/
 
-export const NAME_MESSAGE = 'Use letters only. Spaces, periods, apostrophes and hyphens are fine.'
+export const NAME_MESSAGE = 'Use letters only. Spaces, periods, commas, apostrophes and hyphens are fine.'
 export const ORG_TEXT_MESSAGE = "Use letters, numbers, spaces and . ' - & , ( ) / only."
 export const NO_LINKS_MESSAGE = "Links, email addresses and < > can't go in this field."
 export const DUPLICATE_MEMBER_EMAIL_MESSAGE = 'Each person in the group needs their own email address.'

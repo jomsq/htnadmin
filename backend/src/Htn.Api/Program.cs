@@ -30,6 +30,8 @@ builder.Services.AddOptions<RateLimitSettings>().BindConfiguration(RateLimitSett
 
 // ---- Fail fast on unsafe deployment configuration ----
 HostingSetup.EnsureEmailConfigured(builder.Configuration, builder.Environment);
+// Links in emails carry tokens: outside Development they must be https.
+HostingSetup.EnsurePublicBaseUrl(builder.Configuration, builder.Environment);
 // Ticket QR codes are HMAC-signed with TICKET_SIGNING_KEY; outside Development a missing or short key stops startup.
 TicketSigning.EnsureConfigured(builder.Configuration, builder.Environment);
 

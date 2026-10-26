@@ -61,6 +61,7 @@ public class HtnApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("RateLimiting:PublicRegisterPermitLimit", "100000");
         builder.UseSetting("RateLimiting:PublicProofPermitLimit", "100000");
         builder.UseSetting("RateLimiting:RegisterPerEmailPermitLimit", "100000");
+        builder.UseSetting("RateLimiting:PublicEmailsPerIpPermitLimit", "100000");
         builder.UseSetting("RateLimiting:CheckInPermitLimit", "100000");
         builder.UseSetting("RateLimiting:CheckInSearchPermitLimit", "100000");
         builder.UseSetting("Tickets:SigningKey", TicketSigningKey);

@@ -25,7 +25,7 @@ public sealed record TestEmailQueuedDto(string To);
 
 public sealed class EmailSettingsRequestValidator : AbstractValidator<EmailSettingsRequest>
 {
-    public const int MaxAccounts = 10;
+    public const int MaxAccounts = Event.MaxEmailPaymentAccounts;
 
     public EmailSettingsRequestValidator()
     {

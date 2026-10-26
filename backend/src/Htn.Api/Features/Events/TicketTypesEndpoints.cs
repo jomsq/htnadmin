@@ -39,12 +39,16 @@ public static class TicketTypesEndpoints
         Guid eventId, Guid ticketId, TicketTypeRequest req, HtnDbContext db, IAuditLog audit, ICurrentUser me, TimeProvider clock,
         CancellationToken ct)
     {
-        var ev = await db.Events.AsNoTracking().SingleOrDefaultAsync(e => e.Id == eventId, ct);
+        // Price lock and quantity floor read EventUsage, so they run under the event lock (see EventLock).
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        if (!await EventLock.AcquireAsync(db, eventId, ct)) return TypedResults.NotFound();
+        var ev = await db.Events.AsNoTracking().SingleAsync(e => e.Id == eventId, ct);
         var ticket = await db.TicketTypes.SingleOrDefaultAsync(t => t.Id == ticketId && t.EventId == eventId, ct);
-        if (ev is null || ticket is null) return TypedResults.NotFound();
+        if (ticket is null) return TypedResults.NotFound();
         if (!ticket.IsActive) return Inactive();
 
-        var usage = await EventUsage.ForEventAsync(db, eventId, ct);
+        var now = clock.GetUtcNow();
+        var usage = await EventUsage.ForEventAsync(db, eventId, now, ct);
         var sold = usage.TicketSold(ticket.Id);
         var price = req.Price!.Value;
         var quantity = req.Quantity!.Value;
@@ -63,15 +67,18 @@ public static class TicketTypesEndpoints
         ticket.Update(req.Name, price, quantity, groupSize, req.SalesStartsAt, req.SalesEndsAt, req.Visibility ?? TicketVisibility.Public, sold);
         audit.Record(me.Id, "ticket_type.update", nameof(TicketType), ticket.Id.ToString(), before, EventViews.Audit(ticket));
         await db.SaveChangesAsync(ct);
-        return TypedResults.Ok(EventViews.Ticket(ticket, usage, ev.EndsAt, clock.GetUtcNow()));
+        await tx.CommitAsync(ct);
+        return TypedResults.Ok(EventViews.Ticket(ticket, usage, ev.EndsAt, now));
     }
 
     private static async Task<IResult> Deactivate(
         Guid eventId, Guid ticketId, HtnDbContext db, IAuditLog audit, ICurrentUser me, TimeProvider clock, CancellationToken ct)
     {
-        var ev = await db.Events.AsNoTracking().SingleOrDefaultAsync(e => e.Id == eventId, ct);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        if (!await EventLock.AcquireAsync(db, eventId, ct)) return TypedResults.NotFound();
+        var ev = await db.Events.AsNoTracking().SingleAsync(e => e.Id == eventId, ct);
         var ticket = await db.TicketTypes.SingleOrDefaultAsync(t => t.Id == ticketId && t.EventId == eventId, ct);
-        if (ev is null || ticket is null) return TypedResults.NotFound();
+        if (ticket is null) return TypedResults.NotFound();
         if (!ticket.IsActive) return Inactive();
 
         var now = clock.GetUtcNow();
@@ -79,7 +86,9 @@ public static class TicketTypesEndpoints
         ticket.Deactivate(now);
         audit.Record(me.Id, "ticket_type.deactivate", nameof(TicketType), ticket.Id.ToString(), before, EventViews.Audit(ticket));
         await db.SaveChangesAsync(ct);
-        return TypedResults.Ok(EventViews.Ticket(ticket, await EventUsage.ForEventAsync(db, eventId, ct), ev.EndsAt, now));
+        var usage = await EventUsage.ForEventAsync(db, eventId, now, ct);
+        await tx.CommitAsync(ct);
+        return TypedResults.Ok(EventViews.Ticket(ticket, usage, ev.EndsAt, now));
     }
 
     private static IResult Inactive() =>

@@ -19,8 +19,13 @@ ConnectionStrings__Db=Host=db;Database=htn;Username=htn;Password=change-me
 MAILTRAP_API_TOKEN=
 MAILTRAP_MODE=sandbox
 MAILTRAP_INBOX_ID=
-TICKET_SIGNING_KEY=        # 32+ random bytes, base64
+TICKET_SIGNING_KEY=        # empty in Development (built-in dev key); outside Development 32+ random bytes, base64
 ```
+
+Production notes (details in the README):
+- `PUBLIC_BASE_URL` must be an absolute `https://` URL outside Development, and published dev signing keys are refused.
+- `TRUSTED_PROXY_CIDR` (web): the TLS terminator in front of nginx, for nginx's realip module. Default `127.0.0.1/32`.
+- Run the API as the non-owner role `htn_app` (migrations as the owner); the REVOKEs in the migrations target it. TODO: the role isn't created by the stack yet.
 
 ## Everyday commands
 ```bash

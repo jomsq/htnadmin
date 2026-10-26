@@ -11,6 +11,7 @@ internal sealed class RegistrationConfiguration : IEntityTypeConfiguration<Regis
 {
     public const string IdempotencyIndex = "ux_registrations_event_idempotency_key";
     public const string ProofTokenIndex = "ux_registrations_proof_token_hash";
+    public const string UsageIndex = "ix_registrations_usage";
 
     public void Configure(EntityTypeBuilder<Registration> b)
     {
@@ -24,10 +25,12 @@ internal sealed class RegistrationConfiguration : IEntityTypeConfiguration<Regis
             t.HasCheckConstraint("ck_registrations_voucher", "(voucher_id IS NULL) = (voucher_code IS NULL)");
             t.HasCheckConstraint("ck_registrations_cancelled",
                 "(status = 'Cancelled') = (cancelled_at IS NOT NULL) AND (cancelled_at IS NULL) = (cancel_reason IS NULL)");
-            t.HasCheckConstraint("ck_registrations_paid", "status NOT IN ('Paid', 'CheckedIn') OR paid_at IS NOT NULL");
-            t.HasCheckConstraint("ck_registrations_deadline", "total = 0 OR deadline IS NOT NULL");
+            // Cancelled keeps paid_at when a paid registration is cancelled (the payment stays recorded).
+            t.HasCheckConstraint("ck_registrations_paid", "status = 'Cancelled' OR (status IN ('Paid', 'CheckedIn')) = (paid_at IS NOT NULL)");
+            t.HasCheckConstraint("ck_registrations_deadline", "(total = 0) = (deadline IS NULL) AND (deadline IS NULL OR deadline > created_at)");
             t.HasCheckConstraint("ck_registrations_consent", "char_length(consent_version) > 0");
-            t.HasCheckConstraint("ck_registrations_checked_in", "status <> 'CheckedIn' OR checked_in_at IS NOT NULL");
+            // checked_in_at is the first arrival of the checkout; a registration never leaves CheckedIn.
+            t.HasCheckConstraint("ck_registrations_checked_in", "(status = 'CheckedIn') = (checked_in_at IS NOT NULL)");
             t.HasCheckConstraint("ck_registrations_manual_actor", "source = 'Public' OR created_by_id IS NOT NULL");
         });
         b.HasKey(r => r.Id);
@@ -42,22 +45,30 @@ internal sealed class RegistrationConfiguration : IEntityTypeConfiguration<Regis
         b.Ignore(r => r.Buyer);
         b.Ignore(r => r.IsActive);
 
-        b.HasMany(r => r.Attendees).WithOne().HasForeignKey(a => a.RegistrationId).OnDelete(DeleteBehavior.Restrict);
+        // (id, event_id) is the target of attendees' composite foreign key, so an attendee can't point at another event.
+        b.HasAlternateKey(r => new { r.Id, r.EventId }).HasName("ak_registrations_id_event_id");
+        b.HasMany(r => r.Attendees).WithOne().HasForeignKey(a => new { a.RegistrationId, a.EventId }).HasPrincipalKey(r => new { r.Id, r.EventId })
+            .OnDelete(DeleteBehavior.Restrict);
         b.Navigation(r => r.Attendees).AutoInclude();
 
         // Tabs and counts: WHERE event_id = ? [AND status = ?]; overdue adds deadline.
         b.HasIndex(r => new { r.EventId, r.Status, r.Deadline });
-        b.HasIndex(r => new { r.EventId, r.CreatedAt });
-        // Ticket sold and voucher used counts.
-        b.HasIndex(r => new { r.TicketTypeId, r.Status });
-        b.HasIndex(r => r.VoucherId).HasFilter("voucher_id IS NOT NULL");
+        // Admin list order (newest first) with a stable tie-break.
+        b.HasIndex(r => new { r.EventId, r.CreatedAt, r.Id });
+        // EventUsage: seats / ticket / voucher counts per event, index-only for every registration that may hold a seat.
+        b.HasIndex(r => r.EventId).HasDatabaseName(UsageIndex)
+            .IncludeProperties(r => new { r.TicketTypeId, r.VoucherId, r.Seats, r.Status, r.Deadline })
+            .HasFilter("status <> 'Cancelled'");
         b.HasIndex(r => new { r.EventId, r.IdempotencyKey }).IsUnique().HasDatabaseName(IdempotencyIndex)
             .HasFilter("idempotency_key IS NOT NULL");
         b.HasIndex(r => r.ProofTokenHash).IsUnique().HasDatabaseName(ProofTokenIndex).HasFilter("proof_token_hash IS NOT NULL");
 
         b.HasOne<Event>().WithMany().HasForeignKey(r => r.EventId).OnDelete(DeleteBehavior.Restrict);
-        b.HasOne<TicketType>().WithMany().HasForeignKey(r => r.TicketTypeId).OnDelete(DeleteBehavior.Restrict);
-        b.HasOne<Voucher>().WithMany().HasForeignKey(r => r.VoucherId).OnDelete(DeleteBehavior.Restrict);
+        // Composite foreign keys: the ticket type and voucher must belong to the registration's own event.
+        b.HasOne<TicketType>().WithMany().HasForeignKey(r => new { r.TicketTypeId, r.EventId }).HasPrincipalKey(t => new { t.Id, t.EventId })
+            .OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Voucher>().WithMany().HasForeignKey(r => new { r.VoucherId, r.EventId }).HasPrincipalKey(v => new { v.Id, v.EventId })
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
 
@@ -119,7 +130,7 @@ internal sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         {
             t.HasCheckConstraint("ck_payments_method", CheckConstraints.In("method", Enum.GetNames<PaymentMethod>()));
             t.HasCheckConstraint("ck_payments_amount", "amount >= 0");
-            t.HasCheckConstraint("ck_payments_comp", "method <> 'Comp' OR (amount = 0 AND payment_account_id IS NULL)");
+            t.HasCheckConstraint("ck_payments_comp", "(method = 'Comp') = (amount = 0) AND (method <> 'Comp' OR payment_account_id IS NULL)");
             t.HasCheckConstraint("ck_payments_reverted",
                 "(reverted_at IS NULL) = (revert_reason IS NULL) AND (reverted_at IS NULL OR reverted_at >= marked_at)");
         });

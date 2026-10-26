@@ -23,7 +23,7 @@ public sealed class RegistrationsTests
     private static Registration NewRegistration(TicketType? ticket = null, Voucher? voucher = null)
     {
         var t = ticket ?? Ticket();
-        var people = Enumerable.Range(0, t.GroupSize).Select(i => Person($"P{i}", $"p{i}@example.ph")).ToList();
+        var people = Enumerable.Range(0, t.GroupSize).Select(i => Person($"P{(char)('a' + i)}", $"p{i}@example.ph")).ToList();
         return Registration.Create(EventId, t, people, people.Select(_ => Ids.NewParticipantId()).ToList(), voucher,
             RegistrationSource.Public, null, RegistrationForm.ConsentVersion, Now.AddHours(48), Guid.NewGuid(), Now);
     }

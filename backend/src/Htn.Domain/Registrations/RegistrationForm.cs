@@ -26,6 +26,29 @@ public static partial class RegistrationForm
     public const string ConsentText =
         "I agree to the event terms and the processing of my data under the Data Privacy Act of 2012.";
 
+    /// <summary>
+    /// Person names: Unicode letters and combining marks, spaces, and . , ' ’ - (e.g. "Ma. Niña Dela Cruz-Ñañez", "O'Brien", "Santos, Jr.").
+    /// Must start with a letter. Rules out links, emails and markup (no ':', '/', '@', '&lt;', '&gt;', digits or control characters).
+    /// </summary>
+    [GeneratedRegex(@"^\p{L}[\p{L}\p{M} .,'\u2019-]*\z", RegexOptions.CultureInvariant)]
+    private static partial Regex NameRegex();
+
+    /// <summary>Occupation and company: as names, plus digits and &amp; , ( ) / (e.g. "DICT Region 1", "R&amp;D (IT/Security)").</summary>
+    [GeneratedRegex(@"^[\p{L}\p{N}][\p{L}\p{M}\p{N} .'\u2019&,()/-]*\z", RegexOptions.CultureInvariant)]
+    private static partial Regex OrgTextRegex();
+
+    public const string NameMessage = "Use letters, spaces, periods, commas, apostrophes and hyphens only.";
+    public const string OrgTextMessage = "Use letters, numbers, spaces and . , ' - & ( ) / only.";
+
+    /// <summary>A trimmed person name that passes the character rules (length is checked separately).</summary>
+    public static bool IsValidName(string? value) => value is null || (NameRegex().IsMatch(value.Trim()) && !HasLinkOrMarkup(value));
+
+    /// <summary>A trimmed occupation or company that passes the character rules (length is checked separately).</summary>
+    public static bool IsValidOrgText(string? value) => value is null || (OrgTextRegex().IsMatch(value.Trim()) && !HasLinkOrMarkup(value));
+
+    private static bool HasLinkOrMarkup(string value) =>
+        value.Contains("://", StringComparison.Ordinal) || value.IndexOfAny(['@', '<', '>']) >= 0 || value.Any(char.IsControl);
+
     [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+\z", RegexOptions.CultureInvariant)]
     private static partial Regex EmailRegex();
 

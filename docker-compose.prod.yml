@@ -9,7 +9,9 @@ services:
     image: htnadmin-api:prod
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      App__PublicBaseUrl: ${PUBLIC_BASE_URL:-http://localhost}   # set PUBLIC_BASE_URL to the real https URL
+      # Base of every link in emails (invite, reset, proof upload, registration). Must be absolute https outside
+      # Development, or the API refuses to start.
+      App__PublicBaseUrl: ${PUBLIC_BASE_URL:?Set PUBLIC_BASE_URL in .env to the public https URL, e.g. https://admin.hackthenorth.ph}
       Seed__Dev: "false"
       # Data Protection keys (auth cookies, 2FA state, antiforgery) are stored in Postgres. Production refuses to
       # start unless they are encrypted at rest: mount a PFX with a private key (e.g. a read-only volume at
@@ -34,7 +36,10 @@ services:
     build:
       target: prod
     image: htnadmin-web:prod
-    environment: !reset {}
+    environment: !override
+      # CIDR of the TLS terminator / load balancer in front of nginx, whose X-Forwarded-For is trusted for the real
+      # client address. Default 127.0.0.1/32: nothing in front (clients connect to nginx directly).
+      TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-127.0.0.1/32}
     volumes: !reset []
     ports: !override
       - "80:80"

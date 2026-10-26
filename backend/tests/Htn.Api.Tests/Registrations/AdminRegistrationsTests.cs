@@ -67,12 +67,15 @@ public sealed class AdminRegistrationsTests(HtnApiFactory factory) : IClassFixtu
         var board = await factory.SignedInAsync(PersonLevel.Board);
         var ev = await PublishedAsync(board);
         var maria = await RegisterOneAsync(ev, email => [Person(email, first: "Maria", last: "Santos")]);
-        var jose = await RegisterOneAsync(ev, email => [Person(email, first: "Jose", last: "Dela_Cruz")]);
+        var jose = await RegisterOneAsync(ev, email => [Person(email, first: "Jose", last: "Dela Cruz")]);
+        // Names can't contain "_" any more; rows from before that rule still exist, and search must treat it literally.
+        await factory.DbAsync(db => db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE attendees SET last_name = 'Dela_Cruz' WHERE registration_id = {jose.RegId}"));
         var ana = await RegisterOneAsync(ev, email => [Person(email, first: "Ana", last: "Reyes")]);
         Assert.Equal(HttpStatusCode.OK, (await board.PostAsync($"/api/events/{ev.Id}/registrations/mark-paid", new { ids = new[] { ana.RegId }, method = "Cash" })).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await board.PostAsync($"/api/events/{ev.Id}/registrations/{jose.RegId}/cancel", new { reason = "Asked" })).StatusCode);
         // Maria's deadline passes.
-        await factory.DbAsync(db => db.Registrations.Where(r => r.Id == maria.RegId).ExecuteUpdateAsync(u => u.SetProperty(r => r.Deadline, DateTimeOffset.UtcNow.AddMinutes(-5))));
+        await factory.MakeOverdueAsync(maria.RegId);
 
         async Task<JsonElement> ListAsync(string query = "") =>
             await ApiClient.JsonAsync(await board.GetAsync($"/api/events/{ev.Id}/registrations{query}"));
@@ -130,7 +133,14 @@ public sealed class AdminRegistrationsTests(HtnApiFactory factory) : IClassFixtu
         var ev = await PublishedAsync(board, ticket: Ticket("Team of 3", 4500m, 10, groupSize: 3));
         var buyer = HtnApiFactory.UniqueEmail("buyer");
         var member = HtnApiFactory.UniqueEmail("member");
-        var r = await RegisterOneAsync(ev, _ => [Person(buyer), Member(member, "Jo", "Reyes"), Member(buyer, "Kid", "Santos")]);
+        // Manual registration: an admin may enter a member under the buyer's address (the public form needs distinct ones).
+        var manual = await board.PostAsync($"/api/events/{ev.Id}/registrations", new
+        {
+            ticketTypeId = ev.TicketId, consent = true,
+            attendees = new object[] { Person(buyer), Member(member, "Jo", "Reyes"), Member(buyer, "Kid", "Santos") },
+        });
+        Assert.Equal(HttpStatusCode.Created, manual.StatusCode);
+        var r = (RegId: (await ApiClient.JsonAsync(manual)).Id(), Email: buyer);
         var single = await PublishedAsync(board);
         var other = await RegisterOneAsync(single);
         await factory.DrainOutboxAsync();
@@ -333,7 +343,10 @@ public sealed class AdminRegistrationsTests(HtnApiFactory factory) : IClassFixtu
     {
         var board = await factory.SignedInAsync(PersonLevel.Board);
         var ev = await PublishedAsync(board);
-        var r = await RegisterOneAsync(ev, email => [Person(email, first: "=HYPERLINK(\"http://x\")", last: "Santos, Jr.", company: "@SUM(A1)")]);
+        var r = await RegisterOneAsync(ev, email => [Person(email, first: "Maria", last: "Santos Jr.", company: "DICT")]);
+        // The form refuses these now; older rows (or a future import) could still hold them, so the export must escape.
+        await factory.DbAsync(db => db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE attendees SET first_name = {"=HYPERLINK(\"http://x\")"}, last_name = {"Santos, Jr."}, company = {"@SUM(A1)"} WHERE registration_id = {r.RegId}"));
 
         var res = await board.GetAsync($"/api/events/{ev.Id}/registrations/export.csv");
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);

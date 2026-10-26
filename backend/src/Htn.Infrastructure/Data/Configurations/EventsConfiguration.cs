@@ -27,6 +27,8 @@ internal sealed class EventConfiguration : IEntityTypeConfiguration<Event>
                 $"AND membership_year BETWEEN {Event.MinMembershipYear} AND {Event.MaxMembershipYear}) " +
                 "OR (NOT is_main_event AND membership_fee IS NULL AND membership_year IS NULL)");
             t.HasCheckConstraint("ck_events_email_accent_color", "email_accent_color IS NULL OR email_accent_color ~ '^#[0-9A-F]{6}$'");
+            t.HasCheckConstraint("ck_events_email_payment_accounts",
+                $"array_position(email_payment_account_ids, NULL) IS NULL AND cardinality(email_payment_account_ids) <= {Event.MaxEmailPaymentAccounts}");
             t.HasCheckConstraint("ck_events_payment_deadline",
                 $"payment_deadline_hours IS NULL OR payment_deadline_hours BETWEEN {OrgSettings.MinPaymentDeadlineHours} AND {OrgSettings.MaxPaymentDeadlineHours}");
         });
@@ -63,7 +65,8 @@ internal sealed class TicketTypeConfiguration : IEntityTypeConfiguration<TicketT
             t.HasCheckConstraint("ck_ticket_types_visibility", CheckConstraints.In("visibility", Enum.GetNames<TicketVisibility>()));
             t.HasCheckConstraint("ck_ticket_types_price", $"price BETWEEN 0 AND {TicketType.MaxPrice}");
             t.HasCheckConstraint("ck_ticket_types_quantity", $"quantity BETWEEN {TicketType.MinQuantity} AND {TicketType.MaxQuantity}");
-            t.HasCheckConstraint("ck_ticket_types_group_size", $"group_size BETWEEN {TicketType.MinGroupSize} AND {TicketType.MaxGroupSize}");
+            t.HasCheckConstraint("ck_ticket_types_group_size",
+                $"group_size BETWEEN {TicketType.MinGroupSize} AND {TicketType.MaxGroupSize} AND (visibility = 'Hidden' OR group_size <= {TicketType.MaxPublicGroupSize})");
             t.HasCheckConstraint("ck_ticket_types_sales_window",
                 "sales_starts_at IS NULL OR sales_ends_at IS NULL OR sales_ends_at > sales_starts_at");
             t.HasCheckConstraint("ck_ticket_types_deactivated", "is_active = (deactivated_at IS NULL)");
@@ -73,6 +76,7 @@ internal sealed class TicketTypeConfiguration : IEntityTypeConfiguration<TicketT
         b.Property(t => t.Name).HasMaxLength(TicketType.NameMaxLength).IsRequired();
         b.Property(t => t.Visibility).HasConversion<string>().HasMaxLength(16);
         b.Property<uint>(EventConfiguration.RowVersion).HasColumnName("xmin").HasColumnType("xid").IsRowVersion();
+        b.HasAlternateKey(t => new { t.Id, t.EventId }).HasName("ak_ticket_types_id_event_id");
         b.HasIndex(t => new { t.EventId, t.SortOrder });
         b.HasOne<Event>().WithMany().HasForeignKey(t => t.EventId).OnDelete(DeleteBehavior.Restrict);
     }
@@ -92,6 +96,8 @@ internal sealed class VoucherConfiguration : IEntityTypeConfiguration<Voucher>
                 $"OR (kind = 'Fixed' AND amount_off > 0 AND amount_off <= {Voucher.MaxAmount} AND percent_off IS NULL)");
             t.HasCheckConstraint("ck_vouchers_usage_limit", $"usage_limit IS NULL OR usage_limit BETWEEN 1 AND {Voucher.MaxUsageLimit}");
             t.HasCheckConstraint("ck_vouchers_deactivated", "is_active = (deactivated_at IS NULL)");
+            t.HasCheckConstraint("ck_vouchers_ticket_type_ids",
+                $"array_position(ticket_type_ids, NULL) IS NULL AND cardinality(ticket_type_ids) <= {Voucher.MaxTicketScope}");
         });
         b.HasKey(v => v.Id);
         b.Property(v => v.Id).ValueGeneratedNever();
@@ -103,8 +109,9 @@ internal sealed class VoucherConfiguration : IEntityTypeConfiguration<Voucher>
         b.Property(v => v.TicketTypeIds).HasColumnType("uuid[]").HasDefaultValueSql("'{}'::uuid[]").IsRequired();
         b.Ignore(v => v.Value);
         b.Property<uint>(EventConfiguration.RowVersion).HasColumnName("xmin").HasColumnType("xid").IsRowVersion();
-        // Unique (event_id, upper(code)) is an expression index created by raw SQL in the Events migration
-        // (ux_vouchers_event_code); it also serves event_id lookups.
+        b.HasAlternateKey(v => new { v.Id, v.EventId }).HasName("ak_vouchers_id_event_id");
+        // Codes are stored upper-case (ck_vouchers_code), so a plain unique index is case-insensitive. Also serves event_id lookups.
+        b.HasIndex(v => new { v.EventId, v.Code }).IsUnique().HasDatabaseName("ux_vouchers_event_code");
         b.HasOne<Event>().WithMany().HasForeignKey(v => v.EventId).OnDelete(DeleteBehavior.Restrict);
     }
 }

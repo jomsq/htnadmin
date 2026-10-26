@@ -32,7 +32,7 @@ internal static class EventViews
 
     public static async Task<EventDetailDto> DetailAsync(HtnDbContext db, Event e, bool manager, DateTimeOffset now, CancellationToken ct)
     {
-        var usage = await EventUsage.ForEventAsync(db, e.Id, ct);
+        var usage = await EventUsage.ForEventAsync(db, e.Id, now, ct);
         var tickets = await db.TicketTypes.AsNoTracking().Where(t => t.EventId == e.Id)
             .OrderBy(t => t.SortOrder).ThenBy(t => t.Id).ToListAsync(ct);
         var vouchers = manager

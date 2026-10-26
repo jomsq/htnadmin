@@ -17,6 +17,10 @@ internal sealed record TicketHolder(Guid EventId, Guid RegistrationId, Guid Atte
 
 internal static class CheckInTestData
 {
+    /// <summary>A unique, letters-only name part (names can't contain digits).</summary>
+    public static string LetterTag(string prefix) =>
+        prefix + new string(Guid.NewGuid().ToString("N")[..10].Select(c => (char)('a' + Convert.ToInt32(c.ToString(), 16))).ToArray());
+
     public static string ScanUrl(Guid eventId) => $"/api/events/{eventId}/check-in/scan";
 
     public static object Scan(string payload, string station = "Main entrance") => new { payload, station };

@@ -49,7 +49,7 @@ public static class EventsEndpoints
             _ => q.OrderBy(e => e.StartsAt).ThenBy(e => e.Id),
         };
         var events = await q.ToListAsync(ct);
-        var usage = await EventUsage.ForEventsAsync(db, events.Select(e => e.Id).ToList(), ct);
+        var usage = await EventUsage.ForEventsAsync(db, events.Select(e => e.Id).ToList(), now, ct);
         return TypedResults.Ok(events.Select(e => EventViews.Summary(e, usage, now)).ToList());
     }
 
@@ -95,8 +95,10 @@ public static class EventsEndpoints
     private static async Task<IResult> Update(
         Guid id, UpdateEventRequest req, HtnDbContext db, IAuditLog audit, ICurrentUser me, TimeProvider clock, CancellationToken ct)
     {
-        var ev = await db.Events.SingleOrDefaultAsync(e => e.Id == id, ct);
-        if (ev is null) return TypedResults.NotFound();
+        // The capacity check reads EventUsage, so it runs under the event lock (see EventLock).
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        if (!await EventLock.AcquireAsync(db, id, ct)) return TypedResults.NotFound();
+        var ev = await db.Events.SingleAsync(e => e.Id == id, ct);
 
         var slug = req.Slug ?? ev.Slug;
         if (!string.Equals(slug, ev.Slug, StringComparison.Ordinal))
@@ -114,12 +116,12 @@ public static class EventsEndpoints
         if (isMain && await db.Events.AnyAsync(e => e.IsMainEvent && e.MembershipYear == year && e.Id != ev.Id, ct))
             return DuplicateMainEvent(year!.Value);
 
-        var sold = (await EventUsage.ForEventAsync(db, ev.Id, ct)).EventSold(ev.Id);
+        var now = clock.GetUtcNow();
+        var sold = (await EventUsage.ForEventAsync(db, ev.Id, now, ct)).EventSold(ev.Id);
         if (req.Capacity < sold)
             return Problems.Field("capacity", $"Capacity can't be below the {sold} already registered.", "capacity_below_sold");
 
         var before = EventViews.Audit(ev);
-        var now = clock.GetUtcNow();
         ev.UpdateInfo(req.Name, slug, req.StartsAt!.Value, req.EndsAt!.Value, req.Venue, req.Capacity!.Value, req.Description, now, me.Id);
         ev.UpdateRegistrationSettings(
             req.ManualRegistration ?? ev.ManualRegistration, req.GroupRegistration ?? ev.GroupRegistration, req.PublicPage ?? ev.PublicPage,
@@ -128,6 +130,7 @@ public static class EventsEndpoints
         try
         {
             await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
         }
         catch (DbUpdateException ex) when (EventViews.IsUniqueViolation(ex, SlugIndex))
         {

@@ -18,7 +18,13 @@ public sealed record PublicRegistrationRequest(
 
 public sealed record VoucherCheckRequest(string? Code, Guid? TicketTypeId);
 
-public sealed record MarkPaidInput(PaymentMethod? Method, Guid? PaymentAccountId, string? Reference, DateTimeOffset? ReceivedAt);
+/// <summary>
+/// <see cref="Reason"/> is required for a Comp when money is due (audited). <see cref="OverrideCapacityReason"/> lets an
+/// admin take payment past capacity / ticket quantity (an overdue registration whose seat was released, or a full event).
+/// </summary>
+public sealed record MarkPaidInput(
+    PaymentMethod? Method, Guid? PaymentAccountId, string? Reference, DateTimeOffset? ReceivedAt, string? Reason = null,
+    string? OverrideCapacityReason = null);
 
 /// <summary>Manual registration by an admin: same form, hidden tickets allowed, optionally marked paid at once.</summary>
 public sealed record ManualRegistrationRequest(
@@ -26,7 +32,8 @@ public sealed record ManualRegistrationRequest(
     : IRegistrationForm;
 
 public sealed record BulkMarkPaidRequest(
-    IReadOnlyList<Guid>? Ids, PaymentMethod? Method, Guid? PaymentAccountId, string? Reference, DateTimeOffset? ReceivedAt);
+    IReadOnlyList<Guid>? Ids, PaymentMethod? Method, Guid? PaymentAccountId, string? Reference, DateTimeOffset? ReceivedAt,
+    string? Reason = null, string? OverrideCapacityReason = null);
 
 public sealed record ReasonRequest(string? Reason);
 
@@ -62,7 +69,7 @@ public sealed record RegistrationCountsDto(int All, int PendingPayment, int Paid
 
 public sealed record RegistrationRowDto(
     Guid Id, string BuyerName, string BuyerEmail, int AttendeeCount, IReadOnlyList<string> ParticipantIds, string TicketName,
-    decimal Total, RegistrationStatus Status, bool Overdue, PaymentMethod? Method, string? Reference, bool HasProof,
+    decimal Total, RegistrationStatus Status, bool Overdue, PaymentMethod? Method, string? Reference, string? ProofReference, bool HasProof,
     DateTimeOffset CreatedAt, RegistrationSource Source);
 
 public sealed record RegistrationListDto(
@@ -83,7 +90,7 @@ public sealed record HistoryDto(DateTimeOffset At, string Kind, string? ActorNam
 
 public sealed record RegistrationDetailDto(
     Guid Id, string BuyerName, string BuyerEmail, int AttendeeCount, IReadOnlyList<string> ParticipantIds, string TicketName,
-    decimal Total, RegistrationStatus Status, bool Overdue, PaymentMethod? Method, string? Reference, bool HasProof,
+    decimal Total, RegistrationStatus Status, bool Overdue, PaymentMethod? Method, string? Reference, string? ProofReference, bool HasProof,
     DateTimeOffset CreatedAt, RegistrationSource Source,
     Guid TicketTypeId, IReadOnlyList<AttendeeDto> Attendees, decimal Subtotal, decimal Discount, string? VoucherCode, DateTimeOffset? Deadline,
     PaymentDto? Payment, ProofDto? Proof, string? CancelReason, DateTimeOffset ConsentAt, string ConsentVersion,
@@ -110,10 +117,16 @@ public abstract class AttendeeInputValidator : AbstractValidator<AttendeeInput>
     protected AttendeeInputValidator(bool buyer)
     {
         RuleFor(x => x.FirstName).NotEmpty().WithMessage("Enter the first name.")
-            .MaximumLength(RegistrationForm.NameMaxLength).WithMessage($"Use at most {RegistrationForm.NameMaxLength} characters.");
-        RuleFor(x => x.MiddleName).MaximumLength(RegistrationForm.NameMaxLength).WithMessage($"Use at most {RegistrationForm.NameMaxLength} characters.");
+            .MaximumLength(RegistrationForm.NameMaxLength).WithMessage($"Use at most {RegistrationForm.NameMaxLength} characters.")
+            .Must(RegistrationForm.IsValidName).When(x => !string.IsNullOrWhiteSpace(x.FirstName), ApplyConditionTo.CurrentValidator)
+            .WithMessage(RegistrationForm.NameMessage);
+        RuleFor(x => x.MiddleName).MaximumLength(RegistrationForm.NameMaxLength).WithMessage($"Use at most {RegistrationForm.NameMaxLength} characters.")
+            .Must(RegistrationForm.IsValidName).When(x => !string.IsNullOrWhiteSpace(x.MiddleName), ApplyConditionTo.CurrentValidator)
+            .WithMessage(RegistrationForm.NameMessage);
         RuleFor(x => x.LastName).NotEmpty().WithMessage("Enter the last name.")
-            .MaximumLength(RegistrationForm.NameMaxLength).WithMessage($"Use at most {RegistrationForm.NameMaxLength} characters.");
+            .MaximumLength(RegistrationForm.NameMaxLength).WithMessage($"Use at most {RegistrationForm.NameMaxLength} characters.")
+            .Must(RegistrationForm.IsValidName).When(x => !string.IsNullOrWhiteSpace(x.LastName), ApplyConditionTo.CurrentValidator)
+            .WithMessage(RegistrationForm.NameMessage);
         RuleFor(x => x.Email).NotEmpty().WithMessage("Enter the email address.")
             .Must(RegistrationForm.IsEmail).When(x => !string.IsNullOrWhiteSpace(x.Email), ApplyConditionTo.CurrentValidator)
             .WithMessage("Enter a valid email address.");
@@ -121,8 +134,12 @@ public abstract class AttendeeInputValidator : AbstractValidator<AttendeeInput>
             .WithMessage("Choose an option from the list.");
         RuleFor(x => x.Mobile).Must(m => RegistrationRules.Clean(m) is not { } v || MobileNumber.Normalize(v) is not null)
             .WithMessage("Enter a Philippine mobile number, like 917 123 4567.");
-        RuleFor(x => x.Occupation).MaximumLength(RegistrationForm.OccupationMaxLength).WithMessage($"Use at most {RegistrationForm.OccupationMaxLength} characters.");
-        RuleFor(x => x.Company).MaximumLength(RegistrationForm.CompanyMaxLength).WithMessage($"Use at most {RegistrationForm.CompanyMaxLength} characters.");
+        RuleFor(x => x.Occupation).MaximumLength(RegistrationForm.OccupationMaxLength).WithMessage($"Use at most {RegistrationForm.OccupationMaxLength} characters.")
+            .Must(RegistrationForm.IsValidOrgText).When(x => !string.IsNullOrWhiteSpace(x.Occupation), ApplyConditionTo.CurrentValidator)
+            .WithMessage(RegistrationForm.OrgTextMessage);
+        RuleFor(x => x.Company).MaximumLength(RegistrationForm.CompanyMaxLength).WithMessage($"Use at most {RegistrationForm.CompanyMaxLength} characters.")
+            .Must(RegistrationForm.IsValidOrgText).When(x => !string.IsNullOrWhiteSpace(x.Company), ApplyConditionTo.CurrentValidator)
+            .WithMessage(RegistrationForm.OrgTextMessage);
         RuleFor(x => x.ShirtSize).Must(s => RegistrationRules.Clean(s) is not { } v || RegistrationForm.ShirtSizes.Contains(v))
             .WithMessage("Choose a shirt size from the list.");
         RuleFor(x => x.HearAbout).Must(h => RegistrationRules.Clean(h) is not { } v || RegistrationForm.HearAbout.Contains(v))
@@ -177,6 +194,19 @@ public sealed class PublicRegistrationRequestValidator : AbstractValidator<Publi
         Include(new RegistrationFormValidator());
         RuleFor(x => x.IdempotencyKey).NotNull().WithMessage("Missing request key. Refresh the page and try again.")
             .NotEqual(Guid.Empty).WithMessage("Missing request key. Refresh the page and try again.");
+        RuleFor(x => x.Attendees).Must(a => a is null || a.Count <= TicketType.MaxPublicGroupSize)
+            .WithMessage($"A group has at most {TicketType.MaxPublicGroupSize} people.");
+        // Each ticket email goes to its own person: a public group needs a distinct address for everyone.
+        RuleFor(x => x.Attendees).Custom((list, ctx) =>
+        {
+            if (list is null) return;
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < list.Count; i++)
+            {
+                if (list[i]?.Email?.Trim() is not { Length: > 0 } email) continue;
+                if (!seen.Add(email)) ctx.AddFailure($"attendees[{i}].email", "Each person needs their own email address.");
+            }
+        });
     }
 }
 
@@ -187,6 +217,9 @@ public sealed class MarkPaidInputValidator : AbstractValidator<MarkPaidInput>
         RuleFor(x => x.Method).NotNull().WithMessage("Choose how it was paid.").IsInEnum().WithMessage("Choose how it was paid.");
         RuleFor(x => x.Reference).MaximumLength(Payment.ReferenceMaxLength).WithMessage($"Use at most {Payment.ReferenceMaxLength} characters.");
         RuleFor(x => x.PaymentAccountId).Null().When(x => x.Method == PaymentMethod.Comp).WithMessage("A comp has no payment account.");
+        RuleFor(x => x.Reason).MaximumLength(RegistrationForm.ReasonMaxLength).WithMessage($"Use at most {RegistrationForm.ReasonMaxLength} characters.");
+        RuleFor(x => x.OverrideCapacityReason).MaximumLength(RegistrationForm.ReasonMaxLength)
+            .WithMessage($"Use at most {RegistrationForm.ReasonMaxLength} characters.");
     }
 }
 
@@ -208,6 +241,9 @@ public sealed class BulkMarkPaidRequestValidator : AbstractValidator<BulkMarkPai
         RuleFor(x => x.Method).NotNull().WithMessage("Choose how it was paid.").IsInEnum().WithMessage("Choose how it was paid.");
         RuleFor(x => x.Reference).MaximumLength(Payment.ReferenceMaxLength).WithMessage($"Use at most {Payment.ReferenceMaxLength} characters.");
         RuleFor(x => x.PaymentAccountId).Null().When(x => x.Method == PaymentMethod.Comp).WithMessage("A comp has no payment account.");
+        RuleFor(x => x.Reason).MaximumLength(RegistrationForm.ReasonMaxLength).WithMessage($"Use at most {RegistrationForm.ReasonMaxLength} characters.");
+        RuleFor(x => x.OverrideCapacityReason).MaximumLength(RegistrationForm.ReasonMaxLength)
+            .WithMessage($"Use at most {RegistrationForm.ReasonMaxLength} characters.");
     }
 }
 

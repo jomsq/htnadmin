@@ -16,7 +16,7 @@ public sealed partial class Voucher
     public const decimal MaxPercent = 100m;
     public const decimal MaxAmount = 1_000_000m;
     public const int MaxUsageLimit = 100_000;
-    public const int MaxTicketScope = 100;
+    public const int MaxTicketScope = 50;
 
     [GeneratedRegex(@"^[A-Z0-9-]{3,30}\z", RegexOptions.CultureInvariant)]
     private static partial Regex CodeRegex();

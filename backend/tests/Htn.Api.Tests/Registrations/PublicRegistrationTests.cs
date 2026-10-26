@@ -257,7 +257,7 @@ public sealed partial class PublicRegistrationTests(HtnApiFactory factory) : ICl
         var anon = factory.NewClient();
         var buyer = HtnApiFactory.UniqueEmail("buyer");
         var created = await RegisterOkAsync(anon, ev.Slug, Body(ev.TicketId,
-            [Person(buyer), Member(), Member(), Member(), Member(buyer, "Same", "Address")]));
+            [Person(buyer), Member(), Member(), Member(), Member()]));
         var ids = created.GetProperty("participantIds").Strings();
         Assert.Equal(5, ids.Length);
         Assert.Equal(5, ids.Distinct().Count());
