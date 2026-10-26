@@ -103,7 +103,19 @@ export const routes: RouteObject[] = [
                       {
                         path: 'tasks',
                         element: <RequirePolicy policy={Policies.TasksViewBoard} />,
-                        children: [{ index: true, lazy: async () => ({ Component: (await import('@/features/tasks/TaskBoardPage')).TaskBoardPage }) }],
+                        children: [
+                          {
+                            // The task dialog is a child route of the board, so it is deep-linkable.
+                            lazy: async () => ({ Component: (await import('@/features/tasks/TaskBoardPage')).TaskBoardPage }),
+                            children: [
+                              { index: true, element: null },
+                              {
+                                path: ':taskId',
+                                lazy: async () => ({ Component: (await import('@/features/tasks/TaskDialogRoute')).TaskDialogRoute }),
+                              },
+                            ],
+                          },
+                        ],
                       },
                       {
                         path: 'registrations',
@@ -136,7 +148,8 @@ export const routes: RouteObject[] = [
                 element: <RequirePolicy policy={Policies.FinanceView} />,
                 children: [{ index: true, element: <ComingSoonPage title="Finance" description="Cashflow, ledger, balancing and audit. Board only." /> }],
               },
-              comingSoon('/tasks', 'My tasks', 'Tasks assigned to you across committees.'),
+              { path: '/my-tasks', lazy: async () => ({ Component: (await import('@/features/tasks/MyTasksPage')).MyTasksPage }) },
+              { path: '/tasks', element: <Navigate to="/my-tasks" replace /> },
               comingSoon('/leaderboard', 'Leaderboard', 'Points for goons and apprentices by event, quarter or all time.'),
               { path: '*', element: <NotFoundPage /> },
             ],

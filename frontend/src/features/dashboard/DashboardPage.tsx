@@ -17,7 +17,7 @@ const kpis = [
 
 const sections = [
   { title: 'Payments to verify', link: { to: '/events', label: 'View all' }, empty: 'No payments waiting for review.' },
-  { title: 'My tasks', link: { to: '/tasks', label: 'Open board' }, empty: 'No tasks assigned to you yet.' },
+  { title: 'My tasks', link: { to: '/my-tasks', label: 'Open board' }, empty: 'No tasks assigned to you yet.' },
   { title: 'Upcoming events', link: { to: '/events', label: 'All events' }, empty: 'No upcoming events.' },
   { title: 'Leaderboard · this quarter', link: { to: '/leaderboard', label: 'Full board' }, empty: 'No points awarded this quarter yet.' },
 ]

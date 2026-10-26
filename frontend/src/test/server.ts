@@ -62,6 +62,8 @@ export const orgSettings = {
 export const defaultHandlers = [
   http.get('/api/auth/antiforgery', () => HttpResponse.json({ token: CSRF })),
   http.get('/api/settings/org', () => HttpResponse.json(orgSettings)),
+  // The sidebar "My tasks" count is fetched on every signed-in screen.
+  http.get('/api/tasks/mine', () => HttpResponse.json({ groups: [], openCount: 0 })),
   http.get('/api/auth/me', () => HttpResponse.json({ title: 'Unauthorized', status: 401 }, { status: 401 })),
 ]
 

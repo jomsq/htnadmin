@@ -52,6 +52,20 @@ const codeMessages: Record<string, string> = {
   already_lead: 'This goon already leads another committee in this event.',
   already_in_committee: 'This person is already in another committee for this event.',
   is_lead: 'This person leads the committee. Change the lead first.',
+  needs_approval: 'Only the committee lead or an admin can finish a task. Move it to Review and ask them to approve it.',
+  no_lead: 'Add a lead before approving. A task needs someone in the Lead role so points can be awarded.',
+  task_done: 'This task is done. Reopen it before changing points, assignees or details.',
+  volunteer_role: 'Volunteers help as Assistant only, and never earn points.',
+  already_assigned: 'This person is already on the task.',
+  not_author: 'Only the author can edit a comment.',
+  too_many_attachments: 'This task already has 10 attachments. Remove one before adding another.',
+  task_archived: 'This task is archived. Restore it before changing anything.',
+  not_archived: 'This task is not archived.',
+  not_done: 'This task is not done, so there is nothing to reopen.',
+  too_many_items: 'This checklist is full. Remove an item before adding another.',
+  committee_inactive: 'That committee is no longer active. Move the task to an active committee.',
+  unsupported_type: 'Attach a PNG, JPG or PDF file.',
+  file_too_large: 'This file is larger than 5 MB. Attach a smaller file.',
 }
 
 /** Message for a known API error code, if any. */

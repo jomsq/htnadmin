@@ -8,15 +8,21 @@ type DialogProps = {
   open: boolean
   onClose: () => void
   title: ReactNode
+  /** Small line above the title, e.g. "HTN Con 2026 · Logistics · HTN-142". */
+  eyebrow?: ReactNode
   description?: ReactNode
   children?: ReactNode
   footer?: ReactNode
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
+  /** Larger title for record dialogs (task detail). */
+  titleSize?: 'md' | 'lg'
   role?: 'dialog' | 'alertdialog'
   initialFocusRef?: RefObject<HTMLElement | null>
+  /** Replaces the default body padding, for dialogs that lay out their own columns. */
+  bodyClassName?: string
 }
 
-const widths = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl' }
+const widths = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-[65rem]' }
 
 export function Dialog({ open, ...rest }: DialogProps) {
   if (!open) return null
@@ -26,12 +32,15 @@ export function Dialog({ open, ...rest }: DialogProps) {
 function DialogPanel({
   onClose,
   title,
+  eyebrow,
   description,
   children,
   footer,
   size = 'md',
+  titleSize = 'md',
   role = 'dialog',
   initialFocusRef,
+  bodyClassName,
 }: Omit<DialogProps, 'open'>) {
   const panelRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
@@ -55,7 +64,11 @@ function DialogPanel({
       >
         <div className="flex items-start justify-between gap-4 px-5 pt-5">
           <div className="flex flex-col gap-1">
-            <h2 id={titleId} className="text-base font-semibold text-gray-900 dark:text-gray-50">
+            {eyebrow ? <p className="text-[0.8125rem] text-gray-600 dark:text-gray-400">{eyebrow}</p> : null}
+            <h2
+              id={titleId}
+              className={cn('font-semibold text-gray-900 dark:text-gray-50', titleSize === 'lg' ? 'text-xl tracking-tight' : 'text-base')}
+            >
               {title}
             </h2>
             {description ? (
@@ -73,7 +86,7 @@ function DialogPanel({
             <CloseIcon />
           </button>
         </div>
-        <div className="overflow-y-auto px-5 py-4">{children}</div>
+        <div className={cn('overflow-y-auto', bodyClassName ?? 'px-5 py-4')}>{children}</div>
         {footer ? (
           <div className="flex flex-wrap justify-end gap-2 border-t border-gray-100 px-5 py-4 dark:border-white/10">{footer}</div>
         ) : null}

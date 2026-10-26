@@ -20,6 +20,7 @@ import {
   SlidersIcon,
   WalletIcon,
 } from '@/components/ui/icons'
+import { useMyTasksQuery } from '@/features/tasks/api'
 import { cn } from '@/lib/cn'
 import { initials } from '@/lib/format'
 
@@ -30,6 +31,8 @@ type NavItem = {
   end?: boolean
   locked?: boolean
   policy?: string
+  /** Shows the open count from GET /api/tasks/mine. */
+  badge?: 'myTasks'
 }
 
 /** Sidebar order and labels follow the canvas (Main.dc.html). */
@@ -40,7 +43,7 @@ const navItems: NavItem[] = [
   { to: '/directory', label: 'Directory', icon: BuildingIcon },
   { to: '/store', label: 'Merch store', icon: BagIcon },
   { to: '/finance', label: 'Finance', icon: WalletIcon, locked: true, policy: Policies.FinanceView },
-  { to: '/tasks', label: 'My tasks', icon: CheckSquareIcon },
+  { to: '/my-tasks', label: 'My tasks', icon: CheckSquareIcon, badge: 'myTasks' },
   { to: '/leaderboard', label: 'Leaderboard', icon: ChartIcon },
   { to: '/settings', label: 'Settings', icon: SlidersIcon },
 ]
@@ -65,6 +68,7 @@ function Logo({ subtitle = 'Admin' }: { subtitle?: string }) {
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { me, signOut } = useAuth()
   const navigate = useNavigate()
+  const myTasks = useMyTasksQuery(!!me)
   const [signingOut, setSigningOut] = useState(false)
 
   const policies = me?.policies ?? []
@@ -105,6 +109,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             >
               <item.icon />
               {item.label}
+              {item.badge === 'myTasks' && myTasks.data && myTasks.data.openCount > 0 ? (
+                <span className="ml-auto rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700 tabular-nums dark:bg-white/10 dark:text-gray-200">
+                  {myTasks.data.openCount}
+                  <span className="sr-only"> open tasks</span>
+                </span>
+              ) : null}
               {item.locked ? (
                 <svg role="img" aria-label="Board only" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ml-auto">
                   <title>Board only</title>
